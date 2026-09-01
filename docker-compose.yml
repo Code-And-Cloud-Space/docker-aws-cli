@@ -1,12 +1,11 @@
 services:
-  # LocalStack: Emulates S3, DynamoDB, Step Functions (SFN), CloudWatch, and Secrets Manager
+  # LocalStack: Emulates S3, DynamoDB, Step Functions, CloudWatch, and Secrets Manager
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack:3.8
     container_name: localstack-enterprise-aws
     ports:
       - "4566:4566"
     environment:
-      - SERVICES=s3,dynamodb,stepfunctions,cloudwatch,logs,secretsmanager
       - AWS_DEFAULT_REGION=us-east-1
       - DOCKER_HOST=unix:///var/run/docker.sock
     volumes:
