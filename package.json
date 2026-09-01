@@ -1,24 +1,48 @@
 {
-  "name": "docker-aws-lambda-nodejs",
+  "name": "enterprise-customer-sync-docker-lambda",
   "version": "1.0.0",
-  "description": "Dockerized Node.js application configured for AWS Lambda deployment and Antigravity CLI",
+  "description": "Enterprise Customer Data Synchronization between Salesforce CRM and AWS Cloud Ecosystem (S3, DynamoDB, Step Functions, CloudWatch, Secrets Manager)",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test test/*.test.js",
-    "docker:build": "docker build -t node-aws-lambda:latest .",
-    "docker:run": "docker run --rm -p 9000:8080 node-aws-lambda:latest",
+    "test": "NODE_ENV=test node --test test/*.test.js",
+    "docker:build": "docker build -t enterprise-customer-sync-lambda:latest .",
+    "docker:run": "docker run --rm -p 9000:8080 enterprise-customer-sync-lambda:latest",
     "docker:compose": "docker compose up --build",
-    "docker:test": "curl -XPOST \"http://localhost:9000/2015-03-31/functions/function/invocations\" -d '{\"name\":\"Antigravity User\"}'"
+    "docker:compose:d": "docker compose up -d --build",
+    "docker:compose:down": "docker compose down -v",
+    "docker:logs": "docker compose logs -f",
+    "docker:ps": "docker compose ps",
+    "docker:clean": "docker compose down -v && docker system prune -f",
+    "sync:test:full": "curl -XPOST \"http://localhost:9000/2015-03-31/functions/function/invocations\" -d '{\"action\":\"sync:batch\",\"batchId\":\"BATCH-DAILY-001\"}'",
+    "sync:test:realtime": "curl -XPOST \"http://localhost:9000/2015-03-31/functions/function/invocations\" -d '{\"action\":\"sync:customer\",\"customer\":{\"customerId\":\"CUST-99001\",\"salesforceId\":\"0035g000001ABC1AAZ\",\"fullName\":\"Alice Wayne\",\"email\":\"alice.wayne@enterprise.com\",\"tier\":\"Diamond Enterprise\",\"checksum\":\"sha256-hash-01\"}}'",
+    "sync:test:push-crm": "curl -XPOST \"http://localhost:9000/2015-03-31/functions/function/invocations\" -d '{\"action\":\"salesforce:push\",\"customer\":{\"customerId\":\"CUST-99002\",\"salesforceId\":\"0035g000002DEF2BBZ\",\"firstName\":\"Bruce\",\"lastName\":\"Wayne\",\"email\":\"bruce.wayne@enterprise.com\",\"tier\":\"Platinum\",\"phone\":\"+1-555-0900\"}}'",
+    "sync:test:ledger": "curl -XPOST \"http://localhost:9000/2015-03-31/functions/function/invocations\" -d '{\"action\":\"ledger:query\"}'",
+    "sync:test:s3-batches": "curl -XPOST \"http://localhost:9000/2015-03-31/functions/function/invocations\" -d '{\"action\":\"s3:list-batches\"}'"
   },
   "keywords": [
-    "nodejs",
+    "enterprise-data-sync",
+    "salesforce",
     "aws-lambda",
+    "aws-step-functions",
+    "amazon-s3",
+    "amazon-dynamodb",
+    "amazon-cloudwatch",
+    "aws-secrets-manager",
     "docker",
-    "serverless",
+    "localstack",
     "antigravity"
   ],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-cloudwatch": "^3.1123.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.1123.0",
+    "@aws-sdk/client-dynamodb": "^3.1123.0",
+    "@aws-sdk/client-s3": "^3.1123.0",
+    "@aws-sdk/client-secrets-manager": "^3.1123.0",
+    "@aws-sdk/client-sfn": "^3.1123.0",
+    "@aws-sdk/lib-dynamodb": "^3.1123.0"
+  }
 }

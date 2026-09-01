@@ -1,11 +1,38 @@
 services:
+  # LocalStack: Emulates S3, DynamoDB, Step Functions (SFN), CloudWatch, and Secrets Manager
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack-enterprise-aws
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,dynamodb,stepfunctions,cloudwatch,logs,secretsmanager
+      - AWS_DEFAULT_REGION=us-east-1
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - ./localstack-init:/etc/localstack/init/ready.d
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  # Node.js AWS Lambda Container (Task Execution Engine)
   lambda:
     build:
       context: .
       dockerfile: Dockerfile
-    image: node-aws-lambda:latest
-    container_name: node-aws-lambda-local
+    image: enterprise-customer-sync-lambda:latest
+    container_name: enterprise-sync-lambda-local
     ports:
       - "9000:8080"
     environment:
       - NODE_ENV=development
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - S3_STAGING_BUCKET=enterprise-customer-sync-staging
+      - DYNAMODB_LEDGER_TABLE=CustomerSyncLedger
+      - SFN_STATE_MACHINE_ARN=arn:aws:states:us-east-1:000000000000:stateMachine:EnterpriseCustomerSyncStateMachine
+      - SALESFORCE_SECRET_NAME=enterprise/crm/salesforce-credentials
+      - CLOUDWATCH_NAMESPACE=Enterprise/CustomerSync
+      - LOG_GROUP_NAME=/aws/lambda/enterprise-customer-sync
+    depends_on:
+      - localstack
