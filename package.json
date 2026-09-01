@@ -1,0 +1,24 @@
+{
+  "name": "docker-aws-lambda-nodejs",
+  "version": "1.0.0",
+  "description": "Dockerized Node.js application configured for AWS Lambda deployment and Antigravity CLI",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.js",
+    "docker:build": "docker build -t node-aws-lambda:latest .",
+    "docker:run": "docker run --rm -p 9000:8080 node-aws-lambda:latest",
+    "docker:compose": "docker compose up --build",
+    "docker:test": "curl -XPOST \"http://localhost:9000/2015-03-31/functions/function/invocations\" -d '{\"name\":\"Antigravity User\"}'"
+  },
+  "keywords": [
+    "nodejs",
+    "aws-lambda",
+    "docker",
+    "serverless",
+    "antigravity"
+  ],
+  "author": "",
+  "license": "ISC"
+}
