@@ -57,8 +57,26 @@ This document captures discussion notes, design requirements, and Architectural 
   As projects evolve with AI pair programmers, documentation often drifts from code changes unless strictly enforced at the agent system/rule level.
 - **Decision:**
   - Created persistent, always-on Antigravity rule file: [`.agents/rules/mandatory-documentation-safeguard.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.agents/rules/mandatory-documentation-safeguard.md).
-  - Embedded non-negotiable documentation rules at the top of [AGENTS.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/AGENTS.md) and [GEMINI.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/GEMINI.md).
-  - Consolidated agent rules under `.agents/` directory (removing redundant `.agent/`).
+  - Consolidated agent rules under `.agents/`.
+
+---
+
+### ADR-006: Monorepo `src/` Module Hierarchy & Vercel CLI Development Server
+- **Date:** 2026-09-05
+- **Status:** Accepted
+- **Context:**
+  The user requested:
+  1. Consolidate all application source code under a single `src/` folder containing sub-modules.
+  2. Replace the Nginx container with **Vercel CLI** (`vercel dev`) for serving the local UI dashboard, enabling modern serverless/Vercel-native development and hot-reloading.
+- **Decision:**
+  - Scaffolding restructured to `src/`:
+    - `src/integration-engine/`: Python FastAPI sync middleware.
+    - `src/dashboard-ui/`: Vercel CLI powered dashboard runtime (`package.json`, `vercel.json`, `Dockerfile`).
+    - `src/scripts/`: Initialization and provisioning scripts (`init-aws.sh`).
+  - Replaced Nginx with `vercel dev --listen 0.0.0.0:3000 --yes` inside `src/dashboard-ui/Dockerfile`.
+- **Consequences:**
+  - Clean modular organization where all development code resides in `src/`.
+  - Zero Nginx configuration overhead and direct alignment with Vercel deployment workflows.
 
 ---
 
@@ -74,8 +92,16 @@ This document captures discussion notes, design requirements, and Architectural 
 
 ### Session 3: Mock Removal & Python Virtual Environment Setup
 - **User Instructions:** "will you remove salesforce mock", "setup venv enviroment as well"
-- **Actions Taken:** Removed mock service and directory; created `.venv` and installed dependencies from `requirements.txt`.
+- **Actions Taken:** Removed mock service; created `.venv` and installed dependencies from `requirements.txt`.
 
 ### Session 4: AI Documentation Safeguard & Folder Consolidation
 - **User Instructions:** "make a safe guard for ai so it will update the docuemnt every time", "why there are two folder for agent"
-- **Actions Taken:** Created `.agents/rules/mandatory-documentation-safeguard.md`, updated `AGENTS.md`/`GEMINI.md`, removed redundant `.agent/` folder to standardize on `.agents/`.
+- **Actions Taken:** Created `.agents/rules/mandatory-documentation-safeguard.md`, updated `AGENTS.md`/`GEMINI.md`, removed redundant `.agent/` folder.
+
+### Session 5: Vercel CLI Migration & `src/` Module Restructuring
+- **User Instruction:** "instead of nignx i want you to use vercel cli also i want the all developemnt i one folder under that folder sub folder as a module like we have write now"
+- **Actions Taken:**
+  - Moved all services into `src/` (`src/integration-engine`, `src/dashboard-ui`, `src/scripts`).
+  - Swapped Nginx for Vercel CLI in `src/dashboard-ui/` with `package.json` and `vercel.json`.
+  - Updated `docker-compose.yml` build contexts and volume paths.
+  - Recorded ADR-006.

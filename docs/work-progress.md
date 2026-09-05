@@ -6,7 +6,7 @@ This document tracks all work items, development milestones, current status, and
 
 ## 📌 Project Overview
 - **Goal:** Build a robust, bidirectional integration pipeline between **Live Salesforce** and AWS services (S3, DynamoDB, SQS, SNS, EventBridge), running in a local Docker development environment with a management UI dashboard.
-- **Local Stack:** Docker Compose, LocalStack (AWS emulator), Live Salesforce OAuth2/SOQL Integration Engine, Python `.venv`, React/Static UI Dashboard.
+- **Local Stack:** Docker Compose, LocalStack (AWS emulator), Live Salesforce OAuth2/SOQL Integration Engine (`src/integration-engine`), Vercel CLI Frontend (`src/dashboard-ui`), Python `.venv`.
 
 ---
 
@@ -21,20 +21,19 @@ This document tracks all work items, development milestones, current status, and
 | **Phase 2** | **Local Infrastructure & Containerization** | 🟢 Complete | 2026-09-05 |
 | | - LocalStack AWS container with auto-init (S3, DynamoDB, SQS) | 🟢 Complete | 2026-09-05 |
 | | - Live Salesforce OAuth2 & SOQL Integration Client | 🟢 Complete | 2026-09-05 |
-| | - Removed mock simulator per user request | 🟢 Complete | 2026-09-05 |
 | | - Python Virtual Environment (`.venv`) initialized & dependencies installed | 🟢 Complete | 2026-09-05 |
 | **Phase 3** | **Integration Engine (Middleware)** | 🟢 Complete | 2026-09-05 |
 | | - Live Salesforce -> AWS sync pipeline (SOQL -> SQS -> DynamoDB/S3) | 🟢 Complete | 2026-09-05 |
 | | - AWS -> Live Salesforce push pipeline (REST API upsert) | 🟢 Complete | 2026-09-05 |
 | | - Event logging, retry mechanism, health check endpoints | 🟢 Complete | 2026-09-05 |
-| **Phase 4** | **Web UI Dashboard (Local Dev & Monitoring)** | 🟢 Complete | 2026-09-05 |
+| **Phase 4** | **Web UI Dashboard with Vercel CLI** | 🟢 Complete | 2026-09-05 |
+| | - Migrated from Nginx to Vercel CLI (`vercel dev`) in Docker | 🟢 Complete | 2026-09-05 |
 | | - Live Salesforce Data Explorer (Accounts, Contacts, Opportunities, Leads) | 🟢 Complete | 2026-09-05 |
 | | - AWS Resource Inspector (S3 buckets, DynamoDB records, SQS messages) | 🟢 Complete | 2026-09-05 |
 | | - Live Sync Stream & manual event simulator | 🟢 Complete | 2026-09-05 |
-| **Phase 5** | **AI Governance & Continuous Documentation Safeguards** | 🟢 Complete | 2026-09-05 |
+| **Phase 5** | **Modular Monorepo Restructure (`src/`) & AI Governance** | 🟢 Complete | 2026-09-05 |
+| | - Consolidated all development code under `src/` modular hierarchy | 🟢 Complete | 2026-09-05 |
 | | - Created `.agents/rules/mandatory-documentation-safeguard.md` (`always_on`) | 🟢 Complete | 2026-09-05 |
-| | - Standardized single agent customization folder under `.agents/` | 🟢 Complete | 2026-09-05 |
-| | - Embedded non-negotiable documentation rules in `AGENTS.md` and `GEMINI.md` | 🟢 Complete | 2026-09-05 |
 
 ---
 
@@ -42,15 +41,12 @@ This document tracks all work items, development milestones, current status, and
 
 ### 2026-09-05
 - **Initialized project workspace:** Configured repository from scratch.
-- **Created Antigravity & Agent guidelines:** Configured [AGENTS.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/AGENTS.md) and [GEMINI.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/GEMINI.md) for pair-programming instructions.
-- **Established Documentation hub:** Created [docs/](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/) with `work-progress.md`, `discussions-and-decisions.md`, `architecture.md`, and `setup-guide.md`.
 - **Configured Live Salesforce Integration:**
-  - Upgraded [integration-engine/app/salesforce_client.py](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/integration-engine/app/salesforce_client.py) to authenticate with Live Salesforce Orgs via OAuth 2.0 and query live sObjects using SOQL.
-  - Removed mock Salesforce container.
-- **Created Local Python Virtual Environment:**
-  - Initialized [`.venv`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.venv) and installed all dependencies from [`requirements.txt`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/requirements.txt).
-- **Implemented Mandatory AI Documentation Safeguards & Consolidated Agent Rules:**
-  - Added always-on rule file [`.agents/rules/mandatory-documentation-safeguard.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.agents/rules/mandatory-documentation-safeguard.md).
-  - Consolidated agent rules under `.agents/` and removed redundant `.agent/`.
-  - Updated [AGENTS.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/AGENTS.md) and [GEMINI.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/GEMINI.md).
-  - Recorded ADR-005 in [docs/discussions-and-decisions.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/discussions-and-decisions.md).
+  - Upgraded [src/integration-engine/app/salesforce_client.py](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/salesforce_client.py) to authenticate with Live Salesforce Orgs via OAuth 2.0.
+- **Created Local Python Virtual Environment:** Initialized [`.venv`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.venv) with dependencies from `requirements.txt`.
+- **Implemented Mandatory AI Documentation Safeguards:** Added [`.agents/rules/mandatory-documentation-safeguard.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.agents/rules/mandatory-documentation-safeguard.md).
+- **Restructured into `src/` Monorepo & Migrated to Vercel CLI:**
+  - Moved all development code into [src/](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/) (`src/integration-engine/`, `src/dashboard-ui/`, `src/scripts/`).
+  - Replaced Nginx with Vercel CLI in [src/dashboard-ui/](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/).
+  - Updated [docker-compose.yml](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docker-compose.yml).
+  - Documented ADR-006 in [docs/discussions-and-decisions.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/discussions-and-decisions.md).
