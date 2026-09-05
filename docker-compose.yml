@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # 1. AWS LocalStack Emulator
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack-aws
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,dynamodb,sqs,sns,eventbridge
+      - AWS_DEFAULT_REGION=${AWS_REGION:-us-east-1}
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "${LOCALSTACK_VOLUME_DIR:-./.localstack}:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. Local AWS Resource Initializer
+  init-aws:
+    image: amazon/aws-cli:latest
+    container_name: localstack-init
+    depends_on:
+      localstack:
+        condition: service_healthy
+    volumes:
+      - ./scripts/init-aws.sh:/scripts/init-aws.sh
+    entrypoint: /bin/sh
+    command: -c "chmod +x /scripts/init-aws.sh && /scripts/init-aws.sh"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+      - AWS_DEFAULT_REGION=${AWS_REGION:-us-east-1}
+      - LOCALSTACK_ENDPOINT=http://localstack:4566
+
+  # 3. Integration Sync Engine (FastAPI Middleware connected to Live Salesforce)
+  integration-engine:
+    build:
+      context: ./integration-engine
+      dockerfile: Dockerfile
+    container_name: integration-sync-engine
+    ports:
+      - "8000:8000"
+    depends_on:
+      localstack:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://localstack:4566}
+      - AWS_DEFAULT_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+      - S3_RAW_EVENTS_BUCKET=${S3_RAW_EVENTS_BUCKET:-salesforce-raw-events}
+      - S3_BACKUPS_BUCKET=${S3_BACKUPS_BUCKET:-salesforce-backups}
+      - DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME:-SalesforceSyncRecords}
+      - SQS_INBOUND_QUEUE_NAME=${SQS_INBOUND_QUEUE_NAME:-salesforce-inbound-queue}
+      - SQS_DLQ_NAME=${SQS_DLQ_NAME:-salesforce-deadletter-queue}
+      # Live Salesforce Settings
+      - SALESFORCE_AUTH_TYPE=${SALESFORCE_AUTH_TYPE:-oauth_password}
+      - SALESFORCE_LOGIN_URL=${SALESFORCE_LOGIN_URL:-https://login.salesforce.com}
+      - SALESFORCE_INSTANCE_URL=${SALESFORCE_INSTANCE_URL:-}
+      - SALESFORCE_USERNAME=${SALESFORCE_USERNAME:-}
+      - SALESFORCE_PASSWORD=${SALESFORCE_PASSWORD:-}
+      - SALESFORCE_SECURITY_TOKEN=${SALESFORCE_SECURITY_TOKEN:-}
+      - SALESFORCE_CLIENT_ID=${SALESFORCE_CLIENT_ID:-}
+      - SALESFORCE_CLIENT_SECRET=${SALESFORCE_CLIENT_SECRET:-}
+      - SALESFORCE_ACCESS_TOKEN=${SALESFORCE_ACCESS_TOKEN:-}
+      - SALESFORCE_API_VERSION=${SALESFORCE_API_VERSION:-v58.0}
+    restart: unless-stopped
+
+  # 4. Management UI Dashboard
+  dashboard-ui:
+    build:
+      context: ./dashboard-ui
+      dockerfile: Dockerfile
+    container_name: integration-dashboard-ui
+    ports:
+      - "3000:80"
+    depends_on:
+      - integration-engine
+    restart: unless-stopped
+
+  # 5. Ad-hoc AWS CLI container
+  aws-cli:
+    image: amazon/aws-cli:latest
+    container_name: aws-cli-runner
+    depends_on:
+      - localstack
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+      - AWS_DEFAULT_REGION=${AWS_REGION:-us-east-1}
+    entrypoint: /bin/sh
+    command: -c "tail -f /dev/null"
