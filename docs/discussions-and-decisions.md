@@ -56,11 +56,9 @@ This document captures discussion notes, design requirements, and Architectural 
 - **Context:**
   As projects evolve with AI pair programmers, documentation often drifts from code changes unless strictly enforced at the agent system/rule level.
 - **Decision:**
-  - Created persistent, always-on Antigravity rule files: [`.agents/rules/mandatory-documentation-safeguard.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.agents/rules/mandatory-documentation-safeguard.md) and [`.agent/rules/mandatory-documentation-safeguard.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.agent/rules/mandatory-documentation-safeguard.md).
+  - Created persistent, always-on Antigravity rule file: [`.agents/rules/mandatory-documentation-safeguard.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.agents/rules/mandatory-documentation-safeguard.md).
   - Embedded non-negotiable documentation rules at the top of [AGENTS.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/AGENTS.md) and [GEMINI.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/GEMINI.md).
-  - Every agent turn modifying code, configuration, or requirements is required to update `docs/work-progress.md`, `docs/discussions-and-decisions.md`, `docs/architecture.md`, and `docs/setup-guide.md` in the same response.
-- **Consequences:**
-  - Complete, audit-ready documentation trail for every feature, fix, and architectural shift.
+  - Consolidated agent rules under `.agents/` directory (removing redundant `.agent/`).
 
 ---
 
@@ -78,6 +76,6 @@ This document captures discussion notes, design requirements, and Architectural 
 - **User Instructions:** "will you remove salesforce mock", "setup venv enviroment as well"
 - **Actions Taken:** Removed mock service and directory; created `.venv` and installed dependencies from `requirements.txt`.
 
-### Session 4: AI Documentation Safeguard Implementation
-- **User Instruction:** "make a safe guard for ai so it will update the docuemnt every time"
-- **Actions Taken:** Created `.agents/rules/mandatory-documentation-safeguard.md`, `.agent/rules/mandatory-documentation-safeguard.md`, and updated `AGENTS.md` and `GEMINI.md` with always-on enforcement.
+### Session 4: AI Documentation Safeguard & Folder Consolidation
+- **User Instructions:** "make a safe guard for ai so it will update the docuemnt every time", "why there are two folder for agent"
+- **Actions Taken:** Created `.agents/rules/mandatory-documentation-safeguard.md`, updated `AGENTS.md`/`GEMINI.md`, removed redundant `.agent/` folder to standardize on `.agents/`.

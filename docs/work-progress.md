@@ -33,7 +33,7 @@ This document tracks all work items, development milestones, current status, and
 | | - Live Sync Stream & manual event simulator | 🟢 Complete | 2026-09-05 |
 | **Phase 5** | **AI Governance & Continuous Documentation Safeguards** | 🟢 Complete | 2026-09-05 |
 | | - Created `.agents/rules/mandatory-documentation-safeguard.md` (`always_on`) | 🟢 Complete | 2026-09-05 |
-| | - Created `.agent/rules/mandatory-documentation-safeguard.md` | 🟢 Complete | 2026-09-05 |
+| | - Standardized single agent customization folder under `.agents/` | 🟢 Complete | 2026-09-05 |
 | | - Embedded non-negotiable documentation rules in `AGENTS.md` and `GEMINI.md` | 🟢 Complete | 2026-09-05 |
 
 ---
@@ -49,7 +49,8 @@ This document tracks all work items, development milestones, current status, and
   - Removed mock Salesforce container.
 - **Created Local Python Virtual Environment:**
   - Initialized [`.venv`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.venv) and installed all dependencies from [`requirements.txt`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/requirements.txt).
-- **Implemented Mandatory AI Documentation Safeguards:**
-  - Added always-on rule file [`.agents/rules/mandatory-documentation-safeguard.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.agents/rules/mandatory-documentation-safeguard.md) and [`.agent/rules/mandatory-documentation-safeguard.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.agent/rules/mandatory-documentation-safeguard.md).
-  - Updated [AGENTS.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/AGENTS.md) and [GEMINI.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/GEMINI.md) making documentation updates mandatory on every turn.
-  - Documented ADR-005 in [docs/discussions-and-decisions.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/discussions-and-decisions.md).
+- **Implemented Mandatory AI Documentation Safeguards & Consolidated Agent Rules:**
+  - Added always-on rule file [`.agents/rules/mandatory-documentation-safeguard.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.agents/rules/mandatory-documentation-safeguard.md).
+  - Consolidated agent rules under `.agents/` and removed redundant `.agent/`.
+  - Updated [AGENTS.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/AGENTS.md) and [GEMINI.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/GEMINI.md).
+  - Recorded ADR-005 in [docs/discussions-and-decisions.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/discussions-and-decisions.md).
