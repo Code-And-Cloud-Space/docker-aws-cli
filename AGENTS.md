@@ -6,19 +6,29 @@ Follow these instructions when working on this codebase as an AI pair-programmer
 
 ---
 
+## 🛡️ MANDATORY AI SAFEGUARD: CONTINUOUS DOCUMENTATION ENFORCEMENT
+
+> [!CAUTION]
+> **CRITICAL RULE FOR ALL AI AGENTS (ANTIGRAVITY, GEMINI, CLAUDE, ETC.):**
+> You MUST update the `docs/` folder in the same turn/response whenever ANY code, configuration, dependency, requirement, or architectural decision is modified or discussed.
+>
+> 1. **`docs/work-progress.md`:** Update milestone tables and the daily activity log for every task, feature, or fix.
+> 2. **`docs/discussions-and-decisions.md`:** Record every user requirement change, trade-off, and Architectural Decision Record (ADR).
+> 3. **`docs/architecture.md`:** Keep container services, ports, data models (S3, DynamoDB, SQS), and diagrams current.
+> 4. **`docs/setup-guide.md`:** Keep testing commands, `.env` variables, and setup runbooks updated.
+
+---
+
 ## 🧭 Repository Principles & Rules
 
 ### 1. Docker-First Development & Live Salesforce
 - AWS services run locally inside Docker via `docker compose` with **LocalStack** (`http://localstack:4566`).
 - Salesforce connects directly to the user's **Live Salesforce Org** via credentials in `.env`.
 - The Web UI Dashboard runs on port `3000`.
+- Python local virtual environment is at `.venv/`.
 
 ### 2. Documentation Hygiene (`docs/` Folder)
-- Whenever a new feature, architecture decision, or discussion takes place, **always update the documentation**:
-  - Update [docs/work-progress.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/work-progress.md) for milestone changes and task progress.
-  - Record architectural choices or key design decisions in [docs/discussions-and-decisions.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/discussions-and-decisions.md).
-  - Keep [docs/architecture.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/architecture.md) in sync with data models and container changes.
-  - Keep [docs/setup-guide.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/setup-guide.md) up-to-date with testing commands.
+- Documentation updates are **mandatory and non-negotiable**. Never complete a turn involving code or requirement changes without committing updates to `docs/`.
 
 ### 3. File Linking & Markdown Format
 - In all responses and documentation, use clickable markdown links with the `file://` scheme when referencing repository files (e.g. `[docker-compose.yml](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docker-compose.yml)`).

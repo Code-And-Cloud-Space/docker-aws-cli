@@ -45,13 +45,22 @@ This document captures discussion notes, design requirements, and Architectural 
 - **Context:**
   The developer needs to connect to a **live Salesforce environment** (Developer Org, Sandbox, or Production) even when running the integration and AWS services inside Docker.
 - **Decision:**
-  - Configured `integration-engine` with multi-mode live Salesforce authentication:
-    1. **OAuth 2.0 Username + Password Flow** with security token and Connected App credentials.
-    2. **OAuth 2.0 Client Credentials Flow**.
-    3. **Pre-authenticated Access Token / Session ID** for instant session testing.
-  - Implemented live SOQL execution (`/services/data/v58.0/query`) to fetch real records directly from the live Salesforce Org, while writing raw payloads and indices to the local LocalStack AWS instance.
+  - Configured `integration-engine` with multi-mode live Salesforce authentication (OAuth 2.0 Username + Password, Client Credentials, Access Token).
+  - Removed mock simulator.
+
+---
+
+### ADR-005: Mandatory AI Safeguard for Continuous Documentation
+- **Date:** 2026-09-05
+- **Status:** Accepted
+- **Context:**
+  As projects evolve with AI pair programmers, documentation often drifts from code changes unless strictly enforced at the agent system/rule level.
+- **Decision:**
+  - Created persistent, always-on Antigravity rule files: [`.agents/rules/mandatory-documentation-safeguard.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.agents/rules/mandatory-documentation-safeguard.md) and [`.agent/rules/mandatory-documentation-safeguard.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.agent/rules/mandatory-documentation-safeguard.md).
+  - Embedded non-negotiable documentation rules at the top of [AGENTS.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/AGENTS.md) and [GEMINI.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/GEMINI.md).
+  - Every agent turn modifying code, configuration, or requirements is required to update `docs/work-progress.md`, `docs/discussions-and-decisions.md`, `docs/architecture.md`, and `docs/setup-guide.md` in the same response.
 - **Consequences:**
-  - Developers can work with actual CRM data in real-time while maintaining zero-cost local AWS storage and queuing.
+  - Complete, audit-ready documentation trail for every feature, fix, and architectural shift.
 
 ---
 
@@ -63,7 +72,12 @@ This document captures discussion notes, design requirements, and Architectural 
 
 ### Session 2: Live Salesforce Requirement Clarification
 - **User Instruction:** "the salesforce going to be live even we when we are using docker"
-- **Actions Taken:**
-  - Upgraded [integration-engine/app/salesforce_client.py](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/integration-engine/app/salesforce_client.py) to authenticate with live Salesforce Orgs via OAuth and execute live SOQL queries.
-  - Added live Salesforce credential configurations to [.env](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.env) and [docker-compose.yml](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docker-compose.yml).
-  - Updated [docs/setup-guide.md](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/setup-guide.md) with Live Salesforce connection steps.
+- **Actions Taken:** Upgraded `salesforce_client.py` for live OAuth and SOQL; updated `.env` and `docker-compose.yml`.
+
+### Session 3: Mock Removal & Python Virtual Environment Setup
+- **User Instructions:** "will you remove salesforce mock", "setup venv enviroment as well"
+- **Actions Taken:** Removed mock service and directory; created `.venv` and installed dependencies from `requirements.txt`.
+
+### Session 4: AI Documentation Safeguard Implementation
+- **User Instruction:** "make a safe guard for ai so it will update the docuemnt every time"
+- **Actions Taken:** Created `.agents/rules/mandatory-documentation-safeguard.md`, `.agent/rules/mandatory-documentation-safeguard.md`, and updated `AGENTS.md` and `GEMINI.md` with always-on enforcement.
