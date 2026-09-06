@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Salesforce <-> AWS Integration Platform</title>
+  <title>Salesforce ↔ AWS Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script>
@@ -137,6 +137,10 @@
       <button onclick="switchTab('secrets')" id="tab-btn-secrets" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition whitespace-nowrap">
         <i class="fa-solid fa-key text-yellow-400"></i>
         <span>Secrets Manager</span>
+      </button>
+      <button onclick="switchTab('admin-mapping')" id="tab-btn-admin-mapping" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition whitespace-nowrap">
+        <i class="fa-solid fa-sliders text-indigo-400"></i>
+        <span>Admin Mapping Studio</span>
       </button>
       <button onclick="switchTab('sync')" id="tab-btn-sync" class="hidden py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition whitespace-nowrap">
         <i class="fa-solid fa-bolt text-cyan-400"></i>
@@ -445,6 +449,258 @@
       </div>
     </section>
 
+    <!-- TAB 8: Admin Custom Mapping Studio -->
+    <section id="tab-admin-mapping" class="space-y-6 hidden">
+      <!-- Header & Profile Manager -->
+      <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-4">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-semibold text-white flex items-center space-x-2">
+              <i class="fa-solid fa-sliders text-indigo-400"></i>
+              <span>Admin Custom Field Mapping & Query Studio</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Design bespoke field mappings, customize target column names, set SOQL filter criteria, save reusable profiles, and pull live Salesforce records.</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button onclick="loadCustomMappingsList()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-lg border border-slate-700 flex items-center space-x-1.5 transition">
+              <i class="fa-solid fa-arrows-rotate"></i>
+              <span>Refresh Profiles</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Saved Profiles Toolbar -->
+        <div class="pt-3 border-t border-slate-800/80 flex flex-wrap items-center gap-3 bg-slate-950/40 p-3 rounded-lg">
+          <div class="flex-1 min-w-[240px]">
+            <label class="text-[11px] font-medium text-slate-400 block mb-1">Load Saved Profile:</label>
+            <select id="mapping-profile-select" onchange="onMappingProfileSelected()" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500">
+              <option value="">-- Select Saved Mapping Profile --</option>
+            </select>
+          </div>
+          <div class="flex-1 min-w-[200px]">
+            <label class="text-[11px] font-medium text-slate-400 block mb-1">Profile Name:</label>
+            <input type="text" id="mapping-profile-name" placeholder="e.g. VIP Enterprise Accounts" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500">
+          </div>
+          <div class="flex items-end space-x-2 pt-4">
+            <button onclick="saveCurrentMappingProfile(false)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-2 rounded-lg font-medium flex items-center space-x-1.5 transition shadow">
+              <i class="fa-solid fa-floppy-disk"></i>
+              <span>Save As New</span>
+            </button>
+            <button onclick="saveCurrentMappingProfile(true)" id="btn-update-profile" class="hidden bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-700/60 text-xs px-3 py-2 rounded-lg font-medium flex items-center space-x-1.5 transition">
+              <i class="fa-solid fa-pen-to-square"></i>
+              <span>Update Profile</span>
+            </button>
+            <button onclick="deleteCurrentMappingProfile()" id="btn-delete-profile" class="hidden bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-800/60 text-xs px-3 py-2 rounded-lg flex items-center space-x-1.5 transition">
+              <i class="fa-solid fa-trash"></i>
+              <span>Delete</span>
+            </button>
+            <button onclick="resetMappingStudioForm()" class="bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs px-3 py-2 rounded-lg border border-slate-700 transition" title="Clear form">
+              <i class="fa-solid fa-rotate-left"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Studio Work Area: Full-Width 1-Column Flow -->
+      <div class="space-y-6">
+        
+        <!-- Step 1: sObject Selection -->
+        <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-3 shadow-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+              <span class="w-5 h-5 rounded-full bg-indigo-900/60 text-indigo-300 flex items-center justify-center text-[10px] font-bold border border-indigo-700">1</span>
+              Salesforce sObject Selection
+            </span>
+            <span id="schema-fields-badge" class="text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded border border-slate-700">Ready</span>
+          </div>
+
+          <div class="flex flex-col sm:flex-row gap-3">
+            <div class="flex-1">
+              <select id="studio-sobject-select" onchange="onStudioSobjectChange()" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-indigo-500">
+                <option value="Account">Account (Standard CRM Object)</option>
+                <option value="Contact">Contact (Standard CRM Object)</option>
+                <option value="Opportunity">Opportunity (Standard CRM Object)</option>
+                <option value="Lead">Lead (Standard CRM Object)</option>
+                <option value="Case">Case (Standard CRM Object)</option>
+                <option value="User">User (Standard CRM Object)</option>
+                <option value="Task">Task (Standard CRM Object)</option>
+                <option value="custom">-- Custom Object (e.g. Invoice__c) --</option>
+              </select>
+              <input type="text" id="studio-custom-sobject-input" placeholder="e.g. Invoice__c or Project__c" class="hidden w-full mt-2 bg-slate-800 border border-slate-700 text-xs rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500">
+            </div>
+            <button onclick="fetchSobjectSchema()" id="btn-fetch-schema" class="bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-800 text-xs px-4 py-2.5 rounded-lg font-medium transition flex items-center justify-center space-x-2 whitespace-nowrap shadow-sm">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <span>Fetch Live Schema</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 2: Field Selection & MySQL Target Column Mapping (Full Width) -->
+        <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-4 shadow-sm">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <span class="text-xs font-semibold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+              <span class="w-5 h-5 rounded-full bg-indigo-900/60 text-indigo-300 flex items-center justify-center text-[10px] font-bold border border-indigo-700">2</span>
+              Field Selection & MySQL Mapping
+            </span>
+            <div class="flex items-center space-x-3">
+              <span id="studio-mysql-table-badge" class="text-xs text-emerald-400 font-mono bg-emerald-950/60 px-2.5 py-0.5 rounded border border-emerald-800/80">Table: salesforce_accounts</span>
+              <span id="selected-fields-count" class="text-xs text-cyan-400 font-medium">0 selected</span>
+            </div>
+          </div>
+
+          <!-- Field Search & Quick Selects -->
+          <div class="flex items-center gap-2">
+            <div class="relative flex-1">
+              <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-500 text-xs"></i>
+              <input type="text" id="mapping-field-search" oninput="filterStudioFieldsList()" placeholder="Filter fields by name or label..." class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg pl-9 pr-3 py-2 text-white focus:outline-none focus:border-indigo-500">
+            </div>
+            <button onclick="selectAllStudioFields(true)" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-lg border border-slate-700 transition whitespace-nowrap">Select All</button>
+            <button onclick="selectAllStudioFields(false)" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-lg border border-slate-700 transition whitespace-nowrap">Clear</button>
+          </div>
+
+          <!-- Non-Scrollable Field Mapping List -->
+          <div class="border border-slate-800 rounded-lg overflow-hidden bg-slate-950/60">
+            <div class="px-4 py-2.5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-xs text-slate-400 font-medium">
+              <span>Salesforce Source Field (Type / Label / API Name)</span>
+              <span class="flex items-center space-x-1.5">
+                <i class="fa-solid fa-database text-emerald-400 text-xs"></i>
+                <span>MySQL Target Column / Mapping Alias</span>
+              </span>
+            </div>
+            <div id="mapping-fields-container" class="divide-y divide-slate-800/60 p-2 space-y-1">
+              <div class="text-slate-500 text-center py-10 text-xs">
+                <i class="fa-solid fa-list-check text-2xl mb-2 text-slate-600 block"></i>
+                Click "Fetch Live Schema" or select an object above to load available fields.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Query Filters & Preferences (Full Width) -->
+        <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-4 shadow-sm">
+          <span class="text-xs font-semibold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+            <span class="w-5 h-5 rounded-full bg-indigo-900/60 text-indigo-300 flex items-center justify-center text-[10px] font-bold border border-indigo-700">3</span>
+            Filters, Sorting & Limit Preferences
+          </span>
+
+          <div class="space-y-3">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">SOQL WHERE Filter Clause (Optional):</label>
+              <input type="text" id="studio-filter-clause" placeholder="e.g. Type = 'Customer - Direct' AND AnnualRevenue > 500000" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500">
+              <span class="text-[11px] text-slate-500 block mt-1">Use standard SOQL conditions (e.g. Industry = 'Technology' OR StageName = 'Closed Won')</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">Sort Field (Optional):</label>
+                <input type="text" id="studio-sort-field" placeholder="e.g. LastModifiedDate" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500">
+              </div>
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">Sort Order & Limit:</label>
+                <div class="flex gap-2">
+                  <select id="studio-sort-order" class="bg-slate-800 border border-slate-700 text-xs rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500">
+                    <option value="DESC">DESC (Newest first)</option>
+                    <option value="ASC">ASC (Oldest first)</option>
+                  </select>
+                  <select id="studio-record-limit" class="flex-1 bg-slate-800 border border-slate-700 text-xs rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500">
+                    <option value="10">10 records</option>
+                    <option value="25">25 records</option>
+                    <option value="50" selected>50 records</option>
+                    <option value="100">100 records</option>
+                    <option value="200">200 records</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Big Execute Query Action Button -->
+          <div class="pt-2">
+            <button onclick="executeStudioCustomQuery()" id="btn-execute-custom-query" class="w-full bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-600 hover:from-indigo-500 hover:to-blue-500 text-white font-semibold py-3 px-6 rounded-lg transition text-sm flex items-center justify-center space-x-2 shadow-lg shadow-indigo-900/30 cursor-pointer">
+              <i class="fa-solid fa-play"></i>
+              <span>Execute & Pull Live Data</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ON-DEMAND LIVE PULLED DATA SCREEN: Opened after query execution at the end of the page -->
+        <div id="studio-results-section" class="hidden space-y-4 transition-all duration-300">
+          <div class="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col min-h-[500px]">
+            
+            <!-- Result Header Bar -->
+            <div class="px-5 py-4 border-b border-slate-800 bg-slate-950/90 flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center space-x-3">
+                <span class="text-sm font-semibold text-white flex items-center gap-2">
+                  <i class="fa-solid fa-table text-indigo-400"></i>
+                  <span>Live Pulled Data Results</span>
+                </span>
+                <span id="custom-query-count-badge" class="px-2.5 py-0.5 bg-slate-800 text-cyan-300 text-xs rounded border border-slate-700 font-mono">0 records</span>
+              </div>
+
+              <!-- View Toggles, Exports & Hide -->
+              <div class="flex items-center space-x-2">
+                <div class="bg-slate-800 p-0.5 rounded-lg flex border border-slate-700 text-xs">
+                  <button onclick="switchStudioResultView('table')" id="btn-view-table" class="px-3 py-1.5 rounded bg-indigo-600 text-white font-medium text-xs transition">Mapped Grid</button>
+                  <button onclick="switchStudioResultView('raw')" id="btn-view-raw" class="px-3 py-1.5 rounded text-slate-400 hover:text-white text-xs transition">JSON Raw</button>
+                </div>
+                <button onclick="exportCustomQueryResult('csv')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-1 transition" title="Export as CSV">
+                  <i class="fa-solid fa-file-csv text-emerald-400"></i>
+                  <span>CSV</span>
+                </button>
+                <button onclick="exportCustomQueryResult('json')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-1 transition" title="Export as JSON">
+                  <i class="fa-solid fa-file-code text-cyan-400"></i>
+                  <span>JSON</span>
+                </button>
+                <button onclick="closeStudioResultsSection()" class="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-1 transition" title="Collapse Results Section">
+                  <i class="fa-solid fa-chevron-up"></i>
+                  <span>Hide</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Executed SOQL Snippet Bar -->
+            <div id="custom-soql-bar" class="hidden px-5 py-2.5 bg-slate-950 border-b border-slate-800/80 flex items-center justify-between text-xs font-mono text-indigo-300">
+              <span class="truncate flex-1" id="custom-soql-text">SELECT Id, Name FROM Account</span>
+              <button onclick="copyExecutedSoql()" class="text-slate-400 hover:text-white ml-3 text-xs flex items-center gap-1.5" title="Copy SOQL">
+                <i class="fa-solid fa-copy"></i>
+                <span id="copy-soql-text">Copy SOQL</span>
+              </button>
+            </div>
+
+            <!-- Data Table Container -->
+            <div id="studio-table-wrapper" class="flex-1 overflow-x-auto max-h-[600px]">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead class="bg-slate-950/90 text-slate-400 uppercase tracking-wider sticky top-0 border-b border-slate-800 text-[11px]" id="custom-query-thead">
+                  <tr>
+                    <th class="py-3 px-4 font-semibold">Salesforce ID</th>
+                    <th class="py-3 px-4 font-semibold">Field 1</th>
+                    <th class="py-3 px-4 font-semibold">Field 2</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800 text-slate-300" id="custom-query-tbody">
+                  <tr>
+                    <td colspan="10" class="py-16 text-center text-slate-500">
+                      <div class="flex flex-col items-center justify-center space-y-2">
+                        <i class="fa-solid fa-sliders text-3xl text-slate-600"></i>
+                        <span class="text-sm font-medium text-slate-400">No Query Executed Yet</span>
+                        <span class="text-xs text-slate-500">Select an sObject, choose your desired fields, define aliases, and click "Execute & Pull Live Data".</span>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Raw JSON View Container (Hidden by default) -->
+            <div id="studio-raw-wrapper" class="hidden flex-1 p-5 bg-slate-950 overflow-y-auto max-h-[600px]">
+              <pre id="custom-query-raw-json" class="text-xs font-mono text-emerald-300 whitespace-pre-wrap break-words">No data pulled yet.</pre>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- Create Record Modal -->
@@ -520,6 +776,66 @@
       <div class="px-6 py-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between text-xs text-slate-500">
         <span>Format: JSON / UTF-8</span>
         <button onclick="closeS3ViewerModal()" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Column to MySQL Table Modal -->
+  <div id="add-mysql-column-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center space-x-2.5">
+          <div class="p-2 bg-emerald-950/80 rounded-lg text-emerald-400 border border-emerald-800/60">
+            <i class="fa-solid fa-database text-sm"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold text-white">Add New Column to MySQL</h3>
+            <p class="text-[11px] text-slate-400">Dynamically alters local table schema for mapping</p>
+          </div>
+        </div>
+        <button onclick="closeAddMysqlColumnModal()" class="text-slate-400 hover:text-white p-1 text-lg">&times;</button>
+      </div>
+      
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Target Table:</label>
+          <input type="text" id="modal-mysql-table-name" readonly class="w-full bg-slate-950 border border-slate-800 text-xs rounded-lg px-3 py-2 text-emerald-400 font-mono focus:outline-none">
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">New Column / Field Name:</label>
+          <input type="text" id="modal-new-column-name" oninput="updateModalColPreview()" placeholder="e.g. annual_budget, lead_score, region_code" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500">
+          <span class="text-[10px] text-slate-500 block mt-1">SQL Column Name: <span id="modal-col-preview" class="text-indigo-400 font-mono font-semibold">-</span></span>
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Data Type:</label>
+          <select id="modal-new-column-type" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono">
+            <option value="VARCHAR(255)" selected>VARCHAR(255) - Text / String (Standard)</option>
+            <option value="VARCHAR(500)">VARCHAR(500) - Long String</option>
+            <option value="TEXT">TEXT - Large Text / Notes / Description</option>
+            <option value="LONGTEXT">LONGTEXT - JSON / Rich Payload</option>
+            <option value="INT">INT - Integer Number</option>
+            <option value="BIGINT">BIGINT - Large Integer / Timestamp</option>
+            <option value="DECIMAL(18,2)">DECIMAL(18,2) - Currency / Monetary Amount</option>
+            <option value="FLOAT">FLOAT - Decimal Floating Point</option>
+            <option value="DATETIME">DATETIME - Timestamp / Date & Time</option>
+            <option value="DATE">DATE - Date Only (YYYY-MM-DD)</option>
+            <option value="BOOLEAN">BOOLEAN - Boolean / Flag (0 or 1)</option>
+          </select>
+        </div>
+        <div id="modal-auto-map-container" class="pt-1">
+          <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+            <input type="checkbox" id="modal-auto-map-check" checked class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-0">
+            <span>Automatically map this new column to active Salesforce field (<span id="modal-auto-map-field" class="font-mono text-indigo-300 font-medium">None</span>)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="flex justify-end space-x-2 pt-3 border-t border-slate-800">
+        <button onclick="closeAddMysqlColumnModal()" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg">Cancel</button>
+        <button onclick="submitAddNewMysqlColumn()" id="btn-submit-add-column" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded-lg font-medium flex items-center space-x-1.5 transition shadow">
+          <i class="fa-solid fa-plus"></i>
+          <span>Add Column to Table</span>
+        </button>
       </div>
     </div>
   </div>

@@ -22,7 +22,7 @@ open http://localhost:3000
 ## 🌐 Complete Platform URLs & Endpoint Catalog
 
 ### 1. Web Applications & Interactive Portals
-- **Dashboard Web UI:** `http://localhost:3000` (Modern dark-themed UI with glassmorphic Toast notifications, live countdown timers & multi-tab CRM/AWS explorers)
+- **Dashboard Web UI:** `http://localhost:3000` (Modern dark-themed UI with glassmorphic Toast notifications, live countdown timers, direct Salesforce record ID hyperlinks & multi-tab CRM/AWS explorers)
 - **Interactive Swagger API Docs:** `http://localhost:8000/docs`
 - **ReDoc API Documentation:** `http://localhost:8000/redoc`
 - **OpenAPI JSON Schema:** `http://localhost:8000/openapi.json`
@@ -60,6 +60,16 @@ open http://localhost:3000
 - `GET /api/aws/sqs/stats` - Inspect queue metrics for `salesforce-inbound-queue` and DLQ
 - `GET /api/secrets` - Inspect AWS Secrets Manager stored secret metadata
 - `GET /api/logs` - Integration audit & stream event logs
+
+### 7. Admin Custom Field Mapping & Dynamic MySQL Schema Studio Endpoints
+- `GET /api/salesforce/describe/{sobject}` - Fetch live sObject field schema & data types
+- `POST /api/salesforce/custom-query` - Dynamic SOQL execution with field mappings, filters, sorting & limits
+- `GET /api/admin/mappings` - List saved custom mapping profiles
+- `POST /api/admin/mappings` - Save new custom mapping profile
+- `PUT /api/admin/mappings/{id}` - Update existing mapping profile
+- `DELETE /api/admin/mappings/{id}` - Delete mapping profile
+- `GET /api/db/schema-for-sobject/{sobject}` - Inspect target MySQL table schema and columns for mapping
+- `POST /api/db/add-column` - Dynamically alter MySQL table to add new column on-demand
 
 ---
 
@@ -158,9 +168,42 @@ curl -s http://localhost:8000/api/aws/s3/files -H "X-Session-ID: <your_session_i
 curl -s http://localhost:8000/api/aws/s3/file?key=2026/09/05/created-Account-001.json -H "X-Session-ID: <your_session_id>" | jq .
 ```
 
-### 6. Direct AWS CLI via LocalStack Container
+### 6. Admin Studio: Inspect Schema & Add Dynamic MySQL Column
+```bash
+# 1. Inspect MySQL columns for an sObject
+curl -s http://localhost:8000/api/db/schema-for-sobject/Account -H "X-Session-ID: <your_session_id>" | jq .
+
+# 2. Add a new column dynamically to MySQL table
+curl -s -X POST http://localhost:8000/api/db/add-column \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: <your_session_id>" \
+  -d '{"sobject": "Account", "column_name": "lead_score", "data_type": "INT"}' | jq .
+```
+
+### 7. Direct AWS CLI via LocalStack Container
 ```bash
 docker compose exec aws-cli aws --endpoint-url=http://localstack:4566 s3 ls s3://salesforce-raw-events --recursive
 docker compose exec aws-cli aws --endpoint-url=http://localstack:4566 dynamodb scan --table-name SalesforceSyncRecords
 ```
+
+---
+
+## 🔧 Troubleshooting Guide
+
+### Issue: "Refresh Failed: No refresh token found in Secrets Manager. Please re-authenticate."
+
+#### Why this happens:
+1. **LocalStack / Secrets Manager Reset**: LocalStack container was restarted or ephemeral storage was cleared while the MySQL database retained an existing session record with an expired access token.
+2. **Missing OAuth Scope in Connected App**: The Salesforce Connected App was created without the `refresh_token, offline_access` OAuth scope, or the scope was not requested during login. Consequently, Salesforce only issued a short-lived `access_token` and no `refresh_token`.
+
+#### How to resolve:
+1. **Quick Re-Authentication**:
+   - Open the Dashboard at [http://localhost:3000](http://localhost:3000).
+   - Click the **Connect Salesforce** button in the top navigation or status card.
+   - Complete the Salesforce login prompt to generate a new `access_token` and `refresh_token`.
+2. **Verify Connected App Scopes in Salesforce**:
+   - In Salesforce Setup, navigate to **App Manager** -> Locate your Connected App -> **Edit / Manage**.
+   - Under **Selected OAuth Scopes**, ensure **"Perform requests at any time (refresh_token, offline_access)"** and **"Manage user data via APIs (api)"** are selected.
+   - Under **OAuth Policies**, ensure the **Refresh Token Policy** is set to *"Refresh token is valid until revoked"*.
+
 

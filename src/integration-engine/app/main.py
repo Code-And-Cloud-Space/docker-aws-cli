@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
@@ -7,16 +8,19 @@ from fastapi import FastAPI, HTTPException, Depends, Query, Header, BackgroundTa
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from . import config
 from .database import (
+    engine,
     get_db,
     init_db,
     SalesforceOAuthToken,
     SalesforceAccount,
     SalesforceContact,
-    SalesforceOpportunity
+    SalesforceOpportunity,
+    SalesforceCustomMapping
 )
 from .secrets_manager import secrets_manager
 from .oauth_service import oauth_service
@@ -99,6 +103,31 @@ class AWSToSalesforcePayload(BaseModel):
     sobject: str
     record_id: Optional[str] = None
     data: Dict[str, Any]
+
+class CustomQueryPayload(BaseModel):
+    sobject: str
+    fields: List[str]
+    mappings: Optional[Dict[str, str]] = None
+    filter_clause: Optional[str] = None
+    sort_field: Optional[str] = None
+    sort_order: Optional[str] = "DESC"
+    record_limit: Optional[int] = 50
+
+class CustomMappingSavePayload(BaseModel):
+    name: str
+    sobject: str
+    selected_fields: List[str]
+    field_mappings: Dict[str, str]
+    filter_clause: Optional[str] = None
+    sort_field: Optional[str] = None
+    sort_order: Optional[str] = "DESC"
+    record_limit: Optional[int] = 50
+
+class AddColumnPayload(BaseModel):
+    sobject: str
+    column_name: str
+    data_type: Optional[str] = "VARCHAR(255)"
+    table_name: Optional[str] = None
 
 # ------------------------------------------------------------------------------
 # Root & System Status
@@ -338,6 +367,372 @@ async def create_salesforce_record(
             details={"error": str(e), "payload": payload, "sessionId": session_id}
         )
         raise HTTPException(status_code=401 if "No active Salesforce session" in str(e) else 500, detail=str(e))
+
+# ------------------------------------------------------------------------------
+# Admin & Custom Field Mapping Studio Endpoints
+# ------------------------------------------------------------------------------
+@app.get("/api/salesforce/describe/{sobject}")
+async def describe_salesforce_sobject(
+    sobject: str,
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+    _auth: SalesforceOAuthToken = Depends(require_authenticated_salesforce_session)
+):
+    """Fetches full metadata & field list for an sObject from Live Salesforce Describe API"""
+    try:
+        access_token, instance_url = await oauth_service.get_valid_token(db=db, session_id=session_id)
+        metadata = await sf_client.describe_sobject(sobject=sobject, access_token=access_token, instance_url=instance_url)
+        return metadata
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/salesforce/custom-query")
+async def execute_custom_query(
+    payload: CustomQueryPayload,
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+    _auth: SalesforceOAuthToken = Depends(require_authenticated_salesforce_session)
+):
+    """Executes dynamic SOQL query with custom field selections, mappings, filters & limits"""
+    access_token, instance_url = await oauth_service.get_valid_token(db=db, session_id=session_id)
+    
+    # Sanitize and ensure Id is always present for identification/hyperlinks
+    fields_to_query = list(payload.fields)
+    if not fields_to_query:
+        fields_to_query = ["Id", "Name"]
+    if "Id" not in fields_to_query and "id" not in [f.lower() for f in fields_to_query]:
+        fields_to_query.insert(0, "Id")
+    
+    fields_str = ", ".join(fields_to_query)
+    soql = f"SELECT {fields_str} FROM {payload.sobject}"
+    
+    if payload.filter_clause and payload.filter_clause.strip():
+        soql += f" WHERE {payload.filter_clause.strip()}"
+    
+    if payload.sort_field and payload.sort_field.strip():
+        sort_ord = (payload.sort_order or "DESC").upper()
+        if sort_ord not in ["ASC", "DESC"]:
+            sort_ord = "DESC"
+        soql += f" ORDER BY {payload.sort_field.strip()} {sort_ord}"
+    
+    limit_val = min(max(1, payload.record_limit or 50), 500)
+    soql += f" LIMIT {limit_val}"
+    
+    try:
+        raw_records = await sf_client.query(soql=soql, access_token=access_token, instance_url=instance_url)
+        
+        # Apply custom field mappings
+        mappings = payload.mappings or {}
+        mapped_records = []
+        for r in raw_records:
+            clean_r = {k: v for k, v in r.items() if k != "attributes"}
+            mapped_item = {}
+            for k, v in clean_r.items():
+                target_key = mappings.get(k, k)
+                mapped_item[target_key] = v
+            mapped_records.append({
+                "_raw": clean_r,
+                "_mapped": mapped_item,
+                "id": clean_r.get("Id", "")
+            })
+            
+        log_sync_event("CUSTOM_QUERY_PULL", "SUCCESS", {
+            "sobject": payload.sobject,
+            "recordCount": len(raw_records),
+            "soql": soql,
+            "sessionId": session_id
+        })
+        
+        return {
+            "sobject": payload.sobject,
+            "soql": soql,
+            "total": len(raw_records),
+            "fields": fields_to_query,
+            "mappings": mappings,
+            "records": mapped_records
+        }
+    except Exception as e:
+        log_sync_event("CUSTOM_QUERY_ERROR", "ERROR", {"error": str(e), "soql": soql})
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/admin/mappings")
+def list_custom_mappings(
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+    _auth: SalesforceOAuthToken = Depends(require_authenticated_salesforce_session)
+):
+    """List all saved custom mapping profiles"""
+    query = db.query(SalesforceCustomMapping)
+    if session_id:
+        query = query.filter((SalesforceCustomMapping.session_id == session_id) | (SalesforceCustomMapping.session_id.is_(None)))
+    mappings = query.order_by(SalesforceCustomMapping.id.desc()).all()
+    
+    res = []
+    for m in mappings:
+        res.append({
+            "id": m.id,
+            "name": m.name,
+            "sobject": m.sobject,
+            "selected_fields": json.loads(m.selected_fields or "[]"),
+            "field_mappings": json.loads(m.field_mappings or "{}"),
+            "filter_clause": m.filter_clause,
+            "sort_field": m.sort_field,
+            "sort_order": m.sort_order,
+            "record_limit": m.record_limit,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+            "updated_at": m.updated_at.isoformat() if m.updated_at else None
+        })
+    return {"total": len(res), "mappings": res}
+
+@app.post("/api/admin/mappings")
+def save_custom_mapping(
+    payload: CustomMappingSavePayload,
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+    _auth: SalesforceOAuthToken = Depends(require_authenticated_salesforce_session)
+):
+    """Save a new custom mapping profile"""
+    mapping = SalesforceCustomMapping(
+        session_id=session_id,
+        name=payload.name,
+        sobject=payload.sobject,
+        selected_fields=json.dumps(payload.selected_fields),
+        field_mappings=json.dumps(payload.field_mappings),
+        filter_clause=payload.filter_clause,
+        sort_field=payload.sort_field,
+        sort_order=payload.sort_order or "DESC",
+        record_limit=payload.record_limit or 50
+    )
+    db.add(mapping)
+    db.commit()
+    db.refresh(mapping)
+    
+    return {
+        "status": "success",
+        "message": f"Mapping profile '{payload.name}' saved successfully",
+        "id": mapping.id,
+        "name": mapping.name
+    }
+
+@app.put("/api/admin/mappings/{mapping_id}")
+def update_custom_mapping(
+    mapping_id: int,
+    payload: CustomMappingSavePayload,
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+    _auth: SalesforceOAuthToken = Depends(require_authenticated_salesforce_session)
+):
+    """Update an existing custom mapping profile"""
+    mapping = db.query(SalesforceCustomMapping).filter(SalesforceCustomMapping.id == mapping_id).first()
+    if not mapping:
+        raise HTTPException(status_code=404, detail="Mapping profile not found")
+        
+    mapping.name = payload.name
+    mapping.sobject = payload.sobject
+    mapping.selected_fields = json.dumps(payload.selected_fields)
+    mapping.field_mappings = json.dumps(payload.field_mappings)
+    mapping.filter_clause = payload.filter_clause
+    mapping.sort_field = payload.sort_field
+    mapping.sort_order = payload.sort_order or "DESC"
+    mapping.record_limit = payload.record_limit or 50
+    mapping.updated_at = datetime.now(timezone.utc)
+    
+    db.commit()
+    return {
+        "status": "success",
+        "message": f"Mapping profile '{payload.name}' updated successfully",
+        "id": mapping.id
+    }
+
+@app.delete("/api/admin/mappings/{mapping_id}")
+def delete_custom_mapping(
+    mapping_id: int,
+    db: Session = Depends(get_db),
+    _auth: SalesforceOAuthToken = Depends(require_authenticated_salesforce_session)
+):
+    """Delete a custom mapping profile"""
+    mapping = db.query(SalesforceCustomMapping).filter(SalesforceCustomMapping.id == mapping_id).first()
+    if not mapping:
+        raise HTTPException(status_code=404, detail="Mapping profile not found")
+    db.delete(mapping)
+    db.commit()
+    return {"status": "success", "message": "Mapping profile deleted successfully"}
+
+def get_table_name_for_sobject(sobject: str) -> str:
+    """Derives standard or dynamic MySQL table name for any sObject"""
+    sobject_clean = re.sub(r'[^a-zA-Z0-9_]', '', sobject).strip()
+    mapping = {
+        "account": "salesforce_accounts",
+        "contact": "salesforce_contacts",
+        "opportunity": "salesforce_opportunities",
+        "lead": "salesforce_leads",
+        "case": "salesforce_cases",
+        "user": "salesforce_users",
+        "task": "salesforce_tasks"
+    }
+    low = sobject_clean.lower()
+    if low in mapping:
+        return mapping[low]
+    if low.endswith("s"):
+        return f"salesforce_{low}"
+    return f"salesforce_{low}s"
+
+@app.get("/api/db/schema-for-sobject/{sobject}")
+def get_db_schema_for_sobject(
+    sobject: str,
+    db: Session = Depends(get_db),
+    _auth: SalesforceOAuthToken = Depends(require_authenticated_salesforce_session)
+):
+    """Inspects target MySQL table schema for the specified sObject; creates table if missing"""
+    table_name = get_table_name_for_sobject(sobject)
+    with engine.connect() as conn:
+        check_query = text("""
+            SELECT TABLE_NAME 
+            FROM information_schema.tables 
+            WHERE table_schema = DATABASE() AND table_name = :tname
+        """)
+        exists = conn.execute(check_query, {"tname": table_name}).fetchone()
+        
+        if not exists:
+            # Auto-create table with base columns for new custom/standard objects
+            create_sql = text(f"""
+                CREATE TABLE IF NOT EXISTS `{table_name}` (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    salesforce_id VARCHAR(18) UNIQUE NOT NULL,
+                    name VARCHAR(255) NULL,
+                    raw_payload LONGTEXT NULL,
+                    sync_status VARCHAR(50) DEFAULT 'SYNCED',
+                    salesforce_created_date DATETIME NULL,
+                    salesforce_last_modified_date DATETIME NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_sf_id (salesforce_id),
+                    INDEX idx_sync_status (sync_status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            """)
+            conn.execute(create_sql)
+            conn.commit()
+
+        # Query columns from information_schema
+        cols_query = text("""
+            SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = :tname
+            ORDER BY ORDINAL_POSITION
+        """)
+        rows = conn.execute(cols_query, {"tname": table_name}).fetchall()
+        
+        columns = []
+        for r in rows:
+            columns.append({
+                "name": r[0],
+                "type": r[1],
+                "nullable": r[2] == "YES",
+                "is_primary": r[3] == "PRI",
+                "default": r[4]
+            })
+
+    return {
+        "sobject": sobject,
+        "table_name": table_name,
+        "total_columns": len(columns),
+        "columns": columns
+    }
+
+@app.post("/api/db/add-column")
+def add_db_column(
+    payload: AddColumnPayload,
+    db: Session = Depends(get_db),
+    _auth: SalesforceOAuthToken = Depends(require_authenticated_salesforce_session)
+):
+    """Dynamically adds a new column to the corresponding MySQL table"""
+    table_name = payload.table_name or get_table_name_for_sobject(payload.sobject)
+    if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
+        raise HTTPException(status_code=400, detail="Invalid table name format")
+
+    raw_col = payload.column_name.strip()
+    sanitized_col = re.sub(r'[^a-zA-Z0-9_]', '_', raw_col).lower().strip('_')
+    if not sanitized_col:
+        raise HTTPException(status_code=400, detail="Column name cannot be empty")
+
+    if sanitized_col[0].isdigit():
+        sanitized_col = f"col_{sanitized_col}"
+
+    allowed_types = {
+        "VARCHAR(255)": "VARCHAR(255)",
+        "VARCHAR(500)": "VARCHAR(500)",
+        "VARCHAR(100)": "VARCHAR(100)",
+        "TEXT": "TEXT",
+        "LONGTEXT": "LONGTEXT",
+        "INT": "INT",
+        "BIGINT": "BIGINT",
+        "DECIMAL(18,2)": "DECIMAL(18,2)",
+        "FLOAT": "FLOAT",
+        "DOUBLE": "DOUBLE",
+        "DATETIME": "DATETIME",
+        "DATE": "DATE",
+        "BOOLEAN": "TINYINT(1)",
+        "TINYINT(1)": "TINYINT(1)"
+    }
+    raw_type_upper = (payload.data_type or "VARCHAR(255)").upper().strip()
+    target_type = allowed_types.get(raw_type_upper, "VARCHAR(255)")
+
+    with engine.connect() as conn:
+        # Check if table exists
+        check_tbl = conn.execute(text("""
+            SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = :tname
+        """), {"tname": table_name}).fetchone()
+        
+        if not check_tbl:
+            create_sql = text(f"""
+                CREATE TABLE IF NOT EXISTS `{table_name}` (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    salesforce_id VARCHAR(18) UNIQUE NOT NULL,
+                    name VARCHAR(255) NULL,
+                    raw_payload LONGTEXT NULL,
+                    sync_status VARCHAR(50) DEFAULT 'SYNCED',
+                    salesforce_created_date DATETIME NULL,
+                    salesforce_last_modified_date DATETIME NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_sf_id (salesforce_id),
+                    INDEX idx_sync_status (sync_status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            """)
+            conn.execute(create_sql)
+            conn.commit()
+
+        # Check if column already exists
+        check_col = conn.execute(text("""
+            SELECT COLUMN_NAME FROM information_schema.columns 
+            WHERE table_schema = DATABASE() AND table_name = :tname AND COLUMN_NAME = :cname
+        """), {"tname": table_name, "cname": sanitized_col}).fetchone()
+
+        if check_col:
+            raise HTTPException(status_code=400, detail=f"Column '{sanitized_col}' already exists in table '{table_name}'")
+
+        # Execute ALTER TABLE ADD COLUMN
+        alter_stmt = text(f"ALTER TABLE `{table_name}` ADD COLUMN `{sanitized_col}` {target_type} NULL")
+        conn.execute(alter_stmt)
+        conn.commit()
+
+        # Fetch updated columns
+        cols_query = text("""
+            SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = :tname
+            ORDER BY ORDINAL_POSITION
+        """)
+        rows = conn.execute(cols_query, {"tname": table_name}).fetchall()
+        columns = [{"name": r[0], "type": r[1], "nullable": r[2] == "YES", "is_primary": r[3] == "PRI"} for r in rows]
+
+    return {
+        "status": "success",
+        "message": f"Column '{sanitized_col}' ({target_type}) added successfully to table '{table_name}'",
+        "column_name": sanitized_col,
+        "table_name": table_name,
+        "columns": columns
+    }
 
 # ------------------------------------------------------------------------------
 # Single Record Sync Endpoint ("Sync to AWS & DB" button)

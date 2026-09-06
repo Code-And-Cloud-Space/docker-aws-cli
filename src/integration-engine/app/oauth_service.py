@@ -102,6 +102,8 @@ class SalesforceOAuthService:
 
         access_token = token_data.get("access_token")
         refresh_token = token_data.get("refresh_token")
+        if not refresh_token:
+            print("[OAuthService] WARNING: Salesforce token response did not include a refresh_token. Verify that 'refresh_token' / 'offline_access' scope is assigned to your Connected App.")
         instance_url = token_data.get("instance_url")
         id_url = token_data.get("id", "")
         
@@ -232,8 +234,14 @@ class SalesforceOAuthService:
         if not token_record:
             raise Exception("No active token record found for this session to refresh.")
 
-        secret_name = token_record.refresh_token_secret_arn.split(":")[-1] if ":" in token_record.refresh_token_secret_arn else token_record.refresh_token_secret_arn
-        secret_data = secrets_manager.get_secret(secret_name)
+        # Retrieve secret using full ARN or fallback to session secret name
+        secret_id = token_record.refresh_token_secret_arn
+        secret_data = secrets_manager.get_secret(secret_id) if secret_id else None
+        
+        if not secret_data or not secret_data.get("refreshToken"):
+            # Fallback to friendly secret name
+            fallback_name = f"salesforce/{session_id}/refresh_token"
+            secret_data = secrets_manager.get_secret(fallback_name)
 
         if not secret_data or not secret_data.get("refreshToken"):
             raise Exception("No refresh token found in Secrets Manager. Please re-authenticate.")
@@ -289,8 +297,8 @@ class SalesforceOAuthService:
         for t in tokens:
             t.is_active = False
             try:
-                secret_name = t.refresh_token_secret_arn.split(":")[-1] if ":" in t.refresh_token_secret_arn else t.refresh_token_secret_arn
-                secrets_manager.delete_secret(secret_name)
+                secret_id = t.refresh_token_secret_arn or f"salesforce/{t.session_id or 'active_connection'}/refresh_token"
+                secrets_manager.delete_secret(secret_id)
             except Exception:
                 pass
 

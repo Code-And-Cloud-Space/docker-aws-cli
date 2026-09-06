@@ -61,13 +61,73 @@ This document tracks all work items, development milestones, current status, and
 | **Phase 10** | **Modern Glassmorphic Toast Notification Engine** | 🟢 Complete | 2026-09-06 |
 | | - Designed and integrated dynamic stacking toast container in [`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html) | 🟢 Complete | 2026-09-06 |
 | | - Built `showToast(msg, type, duration)` supporting `success`, `error`, `warning`, and `info` with smooth slide-in & auto-dismiss | 🟢 Complete | 2026-09-06 |
-| | - Replaced 100% of intrusive browser `alert()` popups across the dashboard with non-blocking modern toasts | 🟢 Complete | 2026-09-06 |
+| **Phase 11** | **Direct Salesforce Record ID Deep-Linking & Hyperlinks** | 🟢 Complete | 2026-09-06 |
+| | - Implemented `getSalesforceRecordUrl()` and `renderSalesforceIdLink()` in [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) | 🟢 Complete | 2026-09-06 |
+| | - Linked all Salesforce Record IDs in Live Salesforce Explorer, MySQL Synced DB, and AWS DynamoDB tables to open live Salesforce records in new browser tabs | 🟢 Complete | 2026-09-06 |
+| | - Hyperlinked instance URL in the active session card | 🟢 Complete | 2026-09-06 |
+| **Phase 12** | **Admin Custom Field Mapping & Query Studio** | 🟢 Complete | 2026-09-06 |
+| | - Implemented Live Salesforce Describe API metadata fetcher (`GET /api/salesforce/describe/{sobject}`) | 🟢 Complete | 2026-09-06 |
+| | - Created MySQL `salesforce_custom_mappings` table for persistent profile management | 🟢 Complete | 2026-09-06 |
+| | - Built custom query engine (`POST /api/salesforce/custom-query`) with field mapping, filters, sorting & limits | 🟢 Complete | 2026-09-06 |
+| | - Built Admin Studio UI with interactive field selector, mapping aliases, live data grid, and JSON/CSV export | 🟢 Complete | 2026-09-06 |
+| **Phase 13** | **MySQL Dynamic Field Mapping & On-Demand Column Studio** | 🟢 Complete | 2026-09-06 |
+| | - Implemented `GET /api/db/schema-for-sobject/{sobject}` for dynamic schema inspection & auto-table creation | 🟢 Complete | 2026-09-06 |
+| | - Implemented `POST /api/db/add-column` with SQL sanitization & data type validation (`ALTER TABLE ADD COLUMN`) | 🟢 Complete | 2026-09-06 |
+| | - Integrated MySQL column dropdowns with sObject schema mapping and intelligent snake_case matching | 🟢 Complete | 2026-09-06 |
+| | - Added interactive "Add Column to MySQL Table" modal with live SQL name preview & auto-mapping | 🟢 Complete | 2026-09-06 |
 
 ---
 
 ## 📝 Activity Log
 
-### 2026-09-06
+- **Removed Inline `+` Button from Mapping Rows & Streamlined Dropdown Layout:**
+  - Removed the inline `+` icon button next to mapping dropdowns in [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) to eliminate visual clipping and horizontal overflow.
+  - Expanded the `<select>` dropdown width (`w-72 sm:w-80 md:w-96`) to ensure long column names and type annotations are fully legible with zero truncation.
+  - Retained `➕ + Add New Field to MySQL...` directly within the dropdown options to trigger the creation modal seamlessly.
+- **Made Field Selection & MySQL Mapping Component Non-Scrollable:**
+  - Removed internal fixed height and nested scrollbar (`max-h-[380px] overflow-y-auto`) from `#mapping-fields-container` in [`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html).
+  - Component now renders at its full natural height without inner scrolling, providing seamless vertical reading across all fields.
+- **Refactored Admin Mapping Studio to Full-Width Single-Column Flow with On-Demand Results:**
+  - Converted the Admin Custom Mapping Studio from a split 2-column grid into a spacious full-width 1-column layout in [`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html).
+  - Extended sObject Selection (Step 1), Field Selection & MySQL Mapping (Step 2), and Filter/Sort/Limit Preferences (Step 3) across the full viewport width.
+  - Positioned the "Live Pulled Data" results screen at the bottom of the page (after Step 3) in an initially collapsed/hidden state.
+  - Updated `executeStudioCustomQuery()` in [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) to dynamically unhide and smoothly scroll down to the Live Pulled Data grid upon query execution.
+  - Added a "Hide" button to easily collapse the results section when finished.
+- **Removed "+ New DB Field" Toolbar Button:**
+  - Removed redundant "+ New DB Field" button from the Step 2 toolbar in [`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html), streamlining the field selection header to keep database provisioning directly accessible via the dropdown options.
+- **Enhanced MySQL Target Column Dropdown Options & Alphabetical Ordering:**
+  - Upgraded target mapping dropdown in [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) with clear visual icon markers (`🔹`, `⚙️`, `➕`, `✏️`), categorized optgroups (`MySQL Columns` vs `Actions`), alphabetical sorting, and hover highlights.
+- **Implemented MySQL Dynamic Field Mapping & On-Demand Column Studio:**
+  - Added `GET /api/db/schema-for-sobject/{sobject}` in [`src/integration-engine/app/main.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/main.py) to inspect local MySQL tables (e.g. `salesforce_accounts`, `salesforce_contacts`) and automatically provision dynamic tables for custom/standard objects.
+  - Added `POST /api/db/add-column` with regex sanitization (`re.sub(r'[^a-zA-Z0-9_]', '_', name)`), allowed data type validation (`VARCHAR(255)`, `TEXT`, `INT`, `DECIMAL(18,2)`, `DATETIME`, etc.), and live `ALTER TABLE` execution.
+  - Upgraded Admin Mapping Studio in [`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html) and [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) with:
+    1. Interactive target MySQL column `<select>` populated from database schema.
+    2. One-click `➕ + Add New Field to MySQL...` inline button and action dropdown.
+    3. Modal dialog (`#add-mysql-column-modal`) for on-demand column creation with live SQL name preview, data type selector, and automatic mapping toggle.
+    4. Auto-mapping of standard Salesforce fields to matching MySQL columns (e.g. `BillingCity` -> `billing_city`).
+- **Resolved Admin Studio Initial Placeholder State & 401 Session Lifecycle:**
+  - Diagnosed issue where the Admin Studio data grid table retained the initial locked placeholder after authenticating and switching tabs.
+  - Updated `initAdminMappingStudio()` in [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) to re-render the clean "Ready to Pull Custom Data" state (or last query results) whenever an authenticated Salesforce session is present.
+  - Added strict 401 response handling to `fetchSobjectSchema()` and `executeStudioCustomQuery()`.
+- **Built Admin Custom Field Mapping & Query Studio:**
+  - Implemented `describe_sobject()` in [`src/integration-engine/app/salesforce_client.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/salesforce_client.py) to dynamically inspect live sObject fields and data types from Salesforce.
+  - Created `salesforce_custom_mappings` table in [`src/integration-engine/app/database.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/database.py) and [`src/scripts/init-mysql.sql`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/scripts/init-mysql.sql).
+  - Added REST API endpoints in [`src/integration-engine/app/main.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/main.py):
+    - `GET /api/salesforce/describe/{sobject}` - Live field metadata inspection
+    - `POST /api/salesforce/custom-query` - Dynamic SOQL query with custom field mappings and filters
+    - `GET / POST / PUT / DELETE /api/admin/mappings` - Full CRUD profile management
+  - Designed responsive two-column Admin Studio in [`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html) and implemented complete client logic in [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) with live field selection, alias mapping, SOQL preview, interactive data grid, and JSON/CSV file exports.
+- **Direct Salesforce Record ID Deep-Linking & Hyperlinks:**
+  - Implemented `getSalesforceRecordUrl()` and `renderSalesforceIdLink()` in [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) using the authenticated `currentSalesforceInstanceUrl`.
+  - Replaced plain text Salesforce ID displays with clickable external hyperlinks with icon indicators (`target="_blank"`, `rel="noopener noreferrer"`) across:
+    1. **Live Salesforce CRM Explorer** (`loadSalesforceRecords`)
+    2. **MySQL Synced Database Table** (`loadMySQLRecords`)
+    3. **AWS DynamoDB Table** (`loadDynamoDBRecords`)
+    4. **Active Salesforce Session Card** (Instance URL link)
+- **Fixed Secrets Manager Secret ID / ARN Resolution for OAuth Token Refresh:**
+  - Diagnosed `refresh_token_secret_arn.split(":")[-1]` bug in [`src/integration-engine/app/oauth_service.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/oauth_service.py) which stripped the AWS ARN prefix leaving the random hash suffix (`salesforce/.../refresh_token-vjYTFg`), causing AWS Secrets Manager `ResourceNotFoundException`.
+  - Updated `refresh_active_token()` and `disconnect()` to pass the full `token_record.refresh_token_secret_arn` directly to `secrets_manager.get_secret()` and `delete_secret()`, with automatic fallback to session-friendly secret name `salesforce/{session_id}/refresh_token`.
+  - Verified live token rotation via `POST /api/auth/salesforce/refresh` against running Docker containers; verified new expiration timestamp (`expires_at`) and `last_refreshed_at` in MySQL database.
 - **Asynchronous First-Time Screen Load Connection Check & Auto-Data Hydration:**
   - Diagnosed un-awaited `checkHealth()` asynchronous promise race during initial `refreshAll()` boot on `DOMContentLoaded`.
   - Converted `refreshAll()` to an `async` function and ensured `await checkHealth()` evaluates the live session state from `/api/status` with `X-Session-ID` before deciding to render locked states or hydrate CRM/AWS tables.

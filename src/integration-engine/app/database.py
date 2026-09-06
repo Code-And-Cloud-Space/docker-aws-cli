@@ -100,6 +100,22 @@ class SalesforceOpportunity(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     account = relationship("SalesforceAccount", back_populates="opportunities")
+ 
+class SalesforceCustomMapping(Base):
+    __tablename__ = "salesforce_custom_mappings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(100), nullable=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    sobject = Column(String(100), nullable=False, index=True)
+    selected_fields = Column(Text, nullable=False) # JSON array: ["Id", "Name", "BillingCity"]
+    field_mappings = Column(Text, nullable=False) # JSON map: {"Id": "Record_ID", "Name": "Company"}
+    filter_clause = Column(Text, nullable=True) # e.g. "AnnualRevenue > 100000"
+    sort_field = Column(String(100), nullable=True)
+    sort_order = Column(String(10), default="DESC")
+    record_limit = Column(Integer, default=50)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 # Database Engine & Session
 engine = create_engine(

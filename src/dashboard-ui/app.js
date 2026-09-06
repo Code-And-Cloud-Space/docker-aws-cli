@@ -3,6 +3,26 @@ const API_BASE = "http://localhost:8000";
 let currentTab = "salesforce";
 let tokenCountdownInterval = null;
 let isSalesforceConnected = false;
+let currentSalesforceInstanceUrl = "";
+
+function getSalesforceRecordUrl(recordId) {
+  if (!recordId) return "#";
+  const base = currentSalesforceInstanceUrl ? currentSalesforceInstanceUrl.replace(/\/+$/, "") : "https://login.salesforce.com";
+  return `${base}/${recordId}`;
+}
+
+function renderSalesforceIdLink(recordId) {
+  if (!recordId || recordId === "N/A" || recordId === "-") {
+    return `<span class="font-mono text-xs text-slate-500">-</span>`;
+  }
+  const url = getSalesforceRecordUrl(recordId);
+  return `
+    <a href="${url}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 font-mono text-xs text-sky-400 hover:text-sky-300 hover:underline transition group" title="Open record in Salesforce (${recordId})">
+      <span>${recordId}</span>
+      <i class="fa-solid fa-arrow-up-right-from-square text-[10px] text-sky-400/70 group-hover:text-sky-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"></i>
+    </a>
+  `;
+}
 
 // -----------------------------------------------------------------------------
 // Modern Toast Notification Engine
@@ -187,6 +207,9 @@ function renderLockedStateForAllTabs() {
     `;
   }
 
+  const studioTbody = document.getElementById("custom-query-tbody");
+  if (studioTbody) studioTbody.innerHTML = lockedRow("Salesforce Connection Required", "Please connect to Salesforce to use the Admin Custom Mapping Studio.");
+
   const logCount = document.getElementById("log-count");
   if (logCount) logCount.textContent = "0";
 }
@@ -196,7 +219,7 @@ function switchTab(tabId) {
     tabId = "salesforce";
   }
   currentTab = tabId;
-  ["salesforce", "mysql", "dynamodb", "s3", "sqs", "secrets", "sync", "logs"].forEach(t => {
+  ["salesforce", "mysql", "dynamodb", "s3", "sqs", "secrets", "admin-mapping", "sync", "logs"].forEach(t => {
     const el = document.getElementById(`tab-${t}`);
     const btn = document.getElementById(`tab-btn-${t}`);
     if (el) el.classList.toggle("hidden", t !== tabId);
@@ -214,6 +237,7 @@ function switchTab(tabId) {
   if (tabId === "s3") loadS3Files();
   if (tabId === "sqs") loadSQSStats();
   if (tabId === "secrets") loadSecrets();
+  if (tabId === "admin-mapping") initAdminMappingStudio();
   if (tabId === "logs") loadLogs();
 }
 
@@ -287,6 +311,7 @@ function updateSessionBar(sf) {
 
   if (!sf || sf.status === "disconnected") {
     isSalesforceConnected = false;
+    currentSalesforceInstanceUrl = "";
     statusBadge.className = "px-2 py-0.5 rounded text-[11px] bg-slate-800 text-slate-400 border border-slate-700";
     statusBadge.textContent = "Not Connected";
     detailsGroup.classList.add("hidden");
@@ -304,13 +329,22 @@ function updateSessionBar(sf) {
     renderLockedStateForAllTabs();
   } else {
     isSalesforceConnected = true;
+    currentSalesforceInstanceUrl = sf.instanceUrl || "";
     const isExpired = sf.isExpired;
     statusBadge.className = isExpired ? "px-2 py-0.5 rounded text-[11px] bg-amber-900/50 text-amber-300 border border-amber-800" : "px-2 py-0.5 rounded text-[11px] bg-emerald-900/50 text-emerald-300 border border-emerald-700";
     statusBadge.textContent = isExpired ? "Token Expired (Auto-Refreshes)" : "Connected (Live)";
 
     detailsGroup.classList.remove("hidden");
     document.getElementById("session-org-id").textContent = sf.salesforceOrgId || "N/A";
-    document.getElementById("session-instance-url").textContent = sf.instanceUrl || "N/A";
+    
+    const instanceEl = document.getElementById("session-instance-url");
+    if (instanceEl) {
+      if (sf.instanceUrl) {
+        instanceEl.innerHTML = `<a href="${sf.instanceUrl}" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:text-cyan-300 hover:underline inline-flex items-center gap-1 font-mono">${sf.instanceUrl} <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i></a>`;
+      } else {
+        instanceEl.textContent = "N/A";
+      }
+    }
 
     btnLogin.classList.add("hidden");
     btnRefresh.classList.remove("hidden");
@@ -457,7 +491,7 @@ async function loadSalesforceRecords() {
 
       return `
         <tr class="hover:bg-slate-800/50 transition">
-          <td class="py-3 px-4 font-mono text-xs text-blue-400">${r.Id}</td>
+          <td class="py-3 px-4">${renderSalesforceIdLink(r.Id)}</td>
           <td class="py-3 px-4 font-medium text-white">${name}</td>
           <td class="py-3 px-4 text-xs text-slate-400">${extra}</td>
           <td class="py-3 px-4 text-xs text-slate-500">${modDate}</td>
@@ -549,7 +583,7 @@ async function loadMySQLRecords() {
       return `
         <tr class="hover:bg-slate-800/50 transition">
           <td class="py-3 px-4 font-mono text-xs text-slate-400">#${r.id}</td>
-          <td class="py-3 px-4 font-mono text-xs text-blue-400">${r.salesforceId}</td>
+          <td class="py-3 px-4">${renderSalesforceIdLink(r.salesforceId)}</td>
           <td class="py-3 px-4 font-medium text-white">${name}</td>
           <td class="py-3 px-4 text-xs text-slate-300">${attrs}</td>
           <td class="py-3 px-4">
@@ -604,7 +638,7 @@ async function loadDynamoDBRecords() {
       return `
         <tr class="hover:bg-slate-800/50 transition">
           <td class="py-3 px-4 font-mono text-xs text-amber-400">${item.sObjectType}</td>
-          <td class="py-3 px-4 font-mono text-xs text-blue-400">${item.salesforceId}</td>
+          <td class="py-3 px-4">${renderSalesforceIdLink(item.salesforceId)}</td>
           <td class="py-3 px-4">
             <span class="bg-emerald-900/60 text-emerald-300 text-xs px-2 py-0.5 rounded border border-emerald-700">${item.awsSyncStatus || 'SYNCED'}</span>
           </td>
@@ -1071,7 +1105,793 @@ async function refreshAll() {
   if (currentTab === "s3") loadS3Files();
   if (currentTab === "sqs") loadSQSStats();
   if (currentTab === "secrets") loadSecrets();
+  if (currentTab === "admin-mapping") initAdminMappingStudio();
   if (currentTab === "logs") loadLogs();
+}
+
+// =============================================================================
+// Admin Custom Field Mapping & Query Studio Engine
+// =============================================================================
+let studioAvailableFields = [];
+let studioSelectedFields = new Set();
+let studioFieldMappings = {};
+let studioLastResult = null;
+let studioSavedMappings = [];
+let studioCurrentProfileId = null;
+let studioMysqlColumns = [];
+let studioMysqlTable = "salesforce_accounts";
+let studioActiveFieldForModal = "";
+
+function toSnakeCase(str) {
+  if (!str) return "";
+  return str
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .toLowerCase()
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function initAdminMappingStudio() {
+  if (!isSalesforceConnected || !getSessionId()) {
+    renderLockedStateForAllTabs();
+    return;
+  }
+
+  loadCustomMappingsList();
+
+  const resultsSection = document.getElementById("studio-results-section");
+  if (studioLastResult) {
+    if (resultsSection) resultsSection.classList.remove("hidden");
+    renderCustomQueryResultTable(studioLastResult);
+  } else {
+    if (resultsSection) resultsSection.classList.add("hidden");
+  }
+
+  if (studioAvailableFields.length === 0) {
+    fetchSobjectSchema();
+  }
+}
+
+function getSelectedStudioSobject() {
+  const select = document.getElementById("studio-sobject-select");
+  if (!select) return "Account";
+  if (select.value === "custom") {
+    const customInput = document.getElementById("studio-custom-sobject-input");
+    return (customInput && customInput.value.trim()) ? customInput.value.trim() : "Account";
+  }
+  return select.value;
+}
+
+function onStudioSobjectChange() {
+  const select = document.getElementById("studio-sobject-select");
+  const customInput = document.getElementById("studio-custom-sobject-input");
+  if (select.value === "custom") {
+    customInput.classList.remove("hidden");
+  } else {
+    customInput.classList.add("hidden");
+    studioSelectedFields = new Set();
+    studioFieldMappings = {};
+    fetchSobjectSchema();
+  }
+}
+
+async function fetchSobjectSchema() {
+  const sobject = getSelectedStudioSobject();
+  if (!isSalesforceConnected || !getSessionId()) {
+    showToast("Please connect to Salesforce first.", "warning");
+    return;
+  }
+
+  const badge = document.getElementById("schema-fields-badge");
+  const btn = document.getElementById("btn-fetch-schema");
+  const container = document.getElementById("mapping-fields-container");
+
+  if (badge) badge.textContent = "Fetching...";
+  if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i><span>Loading...</span>`;
+  if (container) container.innerHTML = `<div class="text-slate-400 text-center py-8 text-xs"><i class="fa-solid fa-spinner animate-spin mr-2"></i>Inspecting ${sobject} schema & MySQL table...</div>`;
+
+  try {
+    const [sfRes, dbRes] = await Promise.all([
+      fetch(`${API_BASE}/api/salesforce/describe/${encodeURIComponent(sobject)}`, { headers: getAuthHeaders() }),
+      fetch(`${API_BASE}/api/db/schema-for-sobject/${encodeURIComponent(sobject)}`, { headers: getAuthHeaders() })
+    ]);
+
+    if (sfRes.status === 401 || dbRes.status === 401) {
+      isSalesforceConnected = false;
+      renderLockedStateForAllTabs();
+      return;
+    }
+
+    if (!sfRes.ok) {
+      const err = await sfRes.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to inspect sObject");
+    }
+
+    const sfData = await sfRes.json();
+    studioAvailableFields = sfData.fields || [];
+
+    if (dbRes.ok) {
+      const dbData = await dbRes.json();
+      studioMysqlTable = dbData.table_name || `salesforce_${sobject.toLowerCase()}s`;
+      studioMysqlColumns = dbData.columns || [];
+      const tblBadge = document.getElementById("studio-mysql-table-badge");
+      if (tblBadge) {
+        tblBadge.textContent = `Table: ${studioMysqlTable} (${studioMysqlColumns.length} cols)`;
+      }
+    }
+
+    // Pre-select default standard fields if currently empty
+    if (studioSelectedFields.size === 0) {
+      const defaultPicks = ["Id", "Name", "Type", "Industry", "AnnualRevenue", "BillingCity", "Phone", "Email", "StageName", "Amount", "Status", "CreatedDate"];
+      studioAvailableFields.forEach(f => {
+        if (defaultPicks.includes(f.name)) {
+          studioSelectedFields.add(f.name);
+        }
+      });
+      if (studioSelectedFields.size === 0 && studioAvailableFields.length > 0) {
+        studioSelectedFields.add(studioAvailableFields[0].name);
+      }
+    }
+
+    // Auto-match Salesforce fields to MySQL columns with same name/snake_case name if not yet mapped
+    studioAvailableFields.forEach(f => {
+      if (!studioFieldMappings[f.name]) {
+        const snake = toSnakeCase(f.name);
+        const match = studioMysqlColumns.find(c => c.name.toLowerCase() === f.name.toLowerCase() || c.name.toLowerCase() === snake.toLowerCase());
+        if (match && match.name.toLowerCase() !== f.name.toLowerCase()) {
+          studioFieldMappings[f.name] = match.name;
+        }
+      }
+    });
+
+    if (badge) badge.textContent = `${studioAvailableFields.length} fields found`;
+    renderStudioFieldsList();
+    showToast(`Loaded ${studioAvailableFields.length} Salesforce fields & ${studioMysqlColumns.length} MySQL columns for ${sobject}!`, "success");
+  } catch (err) {
+    if (badge) badge.textContent = "Error";
+    if (container) container.innerHTML = `<div class="text-red-400 text-center py-6 text-xs">Failed to fetch schema: ${err.message}</div>`;
+    showToast(`Describe Error: ${err.message}`, "error");
+  } finally {
+    if (btn) btn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i><span>Fetch Schema</span>`;
+  }
+}
+
+function renderStudioFieldsList(filterText = "") {
+  const container = document.getElementById("mapping-fields-container");
+  const countBadge = document.getElementById("selected-fields-count");
+  if (!container) return;
+
+  if (countBadge) {
+    countBadge.textContent = `${studioSelectedFields.size} of ${studioAvailableFields.length} selected`;
+  }
+
+  if (studioAvailableFields.length === 0) {
+    container.innerHTML = `<div class="text-slate-500 text-center py-8 text-xs">No fields available. Click "Fetch Schema" to load fields.</div>`;
+    return;
+  }
+
+  const query = (filterText || "").toLowerCase().trim();
+  const filtered = studioAvailableFields.filter(f => 
+    !query || f.name.toLowerCase().includes(query) || (f.label && f.label.toLowerCase().includes(query))
+  );
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="text-slate-500 text-center py-6 text-xs">No fields matching "${filterText}"</div>`;
+    return;
+  }
+
+  const typeColorMap = {
+    id: "bg-blue-900/60 text-blue-300 border-blue-700",
+    string: "bg-slate-800 text-slate-300 border-slate-700",
+    picklist: "bg-purple-900/60 text-purple-300 border-purple-700",
+    currency: "bg-emerald-900/60 text-emerald-300 border-emerald-700",
+    date: "bg-amber-900/60 text-amber-300 border-amber-700",
+    datetime: "bg-amber-900/60 text-amber-300 border-amber-700",
+    boolean: "bg-cyan-900/60 text-cyan-300 border-cyan-700",
+    reference: "bg-indigo-900/60 text-indigo-300 border-indigo-700",
+    textarea: "bg-slate-800 text-slate-300 border-slate-700"
+  };
+
+  const sortedMysqlCols = [...studioMysqlColumns].sort((a, b) => a.name.localeCompare(b.name));
+
+  container.innerHTML = filtered.map(f => {
+    const isChecked = studioSelectedFields.has(f.name);
+    const currentAlias = studioFieldMappings[f.name] || "";
+    const typeBadge = typeColorMap[f.type] || "bg-slate-800 text-slate-400 border-slate-700";
+
+    const isMysqlCol = studioMysqlColumns.some(c => c.name.toLowerCase() === currentAlias.toLowerCase());
+
+    return `
+      <div class="flex items-center justify-between gap-4 p-2.5 hover:bg-slate-900/90 rounded-lg transition group border border-transparent hover:border-slate-800/80">
+        <label class="flex items-center space-x-3 cursor-pointer flex-1 min-w-0 pr-2">
+          <input type="checkbox" onchange="toggleStudioField('${f.name}', this.checked)" ${isChecked ? 'checked' : ''} class="w-4 h-4 rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer flex-shrink-0">
+          <div class="truncate">
+            <span class="text-xs font-semibold ${isChecked ? 'text-white' : 'text-slate-400'} group-hover:text-white block truncate">${f.label || f.name}</span>
+            <span class="font-mono text-[11px] text-slate-500 block truncate">${f.name}</span>
+          </div>
+          <span class="text-[9px] px-1.5 py-0.5 rounded border ${typeBadge} uppercase font-mono font-medium flex-shrink-0">${f.type}</span>
+          ${f.custom ? '<span class="text-[9px] px-1.5 bg-amber-950 text-amber-400 rounded border border-amber-800 font-semibold flex-shrink-0">custom</span>' : ''}
+        </label>
+        
+        <div class="w-72 sm:w-80 md:w-96 flex-shrink-0">
+          <select onchange="handleStudioFieldTargetChange('${f.name}', this.value)" class="w-full bg-slate-950 border border-slate-700/80 hover:border-indigo-500/80 focus:border-indigo-500 text-xs text-indigo-300 px-3 py-2 rounded-lg focus:outline-none font-mono cursor-pointer shadow-inner">
+            <option value="">⚙️ Default (${f.name})</option>
+            ${currentAlias && !isMysqlCol ? `<option value="${currentAlias}" selected>✏️ Custom: ${currentAlias}</option>` : ''}
+            <optgroup label="── 🗄️ MySQL Columns (${studioMysqlTable}) ──">
+              ${sortedMysqlCols.map(c => `
+                <option value="${c.name}" ${(currentAlias.toLowerCase() === c.name.toLowerCase() || (!currentAlias && f.name.toLowerCase() === c.name.toLowerCase())) ? 'selected' : ''}>
+                  🔹 ${c.name} (${c.type})
+                </option>
+              `).join("")}
+            </optgroup>
+            <optgroup label="── ⚡ Database Actions ──">
+              <option value="__ADD_NEW_MYSQL_COL__">➕ + Add New Field to MySQL...</option>
+              <option value="__ENTER_CUSTOM_ALIAS__">✏️ Enter Custom Alias...</option>
+            </optgroup>
+          </select>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function handleStudioFieldTargetChange(fieldName, value) {
+  if (value === "__ADD_NEW_MYSQL_COL__") {
+    openAddMysqlColumnModal(fieldName);
+    renderStudioFieldsList(document.getElementById("mapping-field-search").value);
+    return;
+  }
+  if (value === "__ENTER_CUSTOM_ALIAS__") {
+    const existing = studioFieldMappings[fieldName] || fieldName;
+    const custom = prompt(`Enter custom target column alias for '${fieldName}':`, existing);
+    if (custom !== null && custom.trim() !== "") {
+      studioFieldMappings[fieldName] = custom.trim();
+      studioSelectedFields.add(fieldName);
+    }
+    renderStudioFieldsList(document.getElementById("mapping-field-search").value);
+    return;
+  }
+  if (!value || value.trim() === "") {
+    delete studioFieldMappings[fieldName];
+  } else {
+    studioFieldMappings[fieldName] = value.trim();
+    studioSelectedFields.add(fieldName);
+  }
+  renderStudioFieldsList(document.getElementById("mapping-field-search").value);
+}
+
+function openAddMysqlColumnModal(fieldName = "") {
+  const modal = document.getElementById("add-mysql-column-modal");
+  if (!modal) return;
+
+  studioActiveFieldForModal = fieldName || "";
+  document.getElementById("modal-mysql-table-name").value = studioMysqlTable;
+  
+  const initialName = fieldName ? toSnakeCase(fieldName) : "";
+  document.getElementById("modal-new-column-name").value = initialName;
+  updateModalColPreview();
+
+  const autoMapContainer = document.getElementById("modal-auto-map-container");
+  const autoMapField = document.getElementById("modal-auto-map-field");
+  const autoMapCheck = document.getElementById("modal-auto-map-check");
+
+  if (fieldName) {
+    if (autoMapContainer) autoMapContainer.classList.remove("hidden");
+    if (autoMapField) autoMapField.textContent = fieldName;
+    if (autoMapCheck) autoMapCheck.checked = true;
+  } else {
+    if (autoMapContainer) autoMapContainer.classList.add("hidden");
+    if (autoMapCheck) autoMapCheck.checked = false;
+  }
+
+  modal.classList.remove("hidden");
+  document.getElementById("modal-new-column-name").focus();
+}
+
+function closeAddMysqlColumnModal() {
+  const modal = document.getElementById("add-mysql-column-modal");
+  if (modal) modal.classList.add("hidden");
+  studioActiveFieldForModal = "";
+}
+
+function updateModalColPreview() {
+  const val = document.getElementById("modal-new-column-name").value;
+  const preview = document.getElementById("modal-col-preview");
+  if (preview) {
+    preview.textContent = val ? toSnakeCase(val) : "-";
+  }
+}
+
+async function submitAddNewMysqlColumn() {
+  const rawName = document.getElementById("modal-new-column-name").value;
+  const colName = toSnakeCase(rawName);
+  const dataType = document.getElementById("modal-new-column-type").value;
+  const sobject = getSelectedStudioSobject();
+
+  if (!colName) {
+    showToast("Please enter a valid column name", "warning");
+    return;
+  }
+
+  const btn = document.getElementById("btn-submit-add-column");
+  btn.disabled = true;
+  btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i><span>Adding Column...</span>`;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/db/add-column`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        sobject,
+        table_name: studioMysqlTable,
+        column_name: colName,
+        data_type: dataType
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to add column");
+    }
+
+    const data = await res.json();
+    studioMysqlColumns = data.columns || [];
+    studioMysqlTable = data.table_name || studioMysqlTable;
+
+    const autoMapCheck = document.getElementById("modal-auto-map-check");
+    if (autoMapCheck && autoMapCheck.checked && studioActiveFieldForModal) {
+      studioFieldMappings[studioActiveFieldForModal] = data.column_name;
+      studioSelectedFields.add(studioActiveFieldForModal);
+    }
+
+    closeAddMysqlColumnModal();
+    renderStudioFieldsList();
+    showToast(`Column '${data.column_name}' (${dataType}) added to MySQL table '${studioMysqlTable}'!`, "success");
+  } catch (err) {
+    showToast(`Database Error: ${err.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<i class="fa-solid fa-plus"></i><span>Add Column to Table</span>`;
+  }
+}
+
+function filterStudioFieldsList() {
+  const val = document.getElementById("mapping-field-search").value;
+  renderStudioFieldsList(val);
+}
+
+function toggleStudioField(fieldName, isChecked) {
+  if (isChecked) {
+    studioSelectedFields.add(fieldName);
+  } else {
+    studioSelectedFields.delete(fieldName);
+  }
+  const countBadge = document.getElementById("selected-fields-count");
+  if (countBadge) {
+    countBadge.textContent = `${studioSelectedFields.size} of ${studioAvailableFields.length} selected`;
+  }
+}
+
+function updateStudioFieldAlias(fieldName, alias) {
+  if (alias && alias.trim()) {
+    studioFieldMappings[fieldName] = alias.trim();
+  } else {
+    delete studioFieldMappings[fieldName];
+  }
+}
+
+function selectAllStudioFields(select) {
+  if (select) {
+    studioAvailableFields.forEach(f => studioSelectedFields.add(f.name));
+  } else {
+    studioSelectedFields.clear();
+  }
+  const filterVal = document.getElementById("mapping-field-search").value;
+  renderStudioFieldsList(filterVal);
+}
+
+async function executeStudioCustomQuery() {
+  if (!isSalesforceConnected || !getSessionId()) {
+    showToast("Please connect to Salesforce first.", "warning");
+    return;
+  }
+
+  const sobject = getSelectedStudioSobject();
+  const fields = Array.from(studioSelectedFields);
+
+  if (fields.length === 0) {
+    showToast("Please select at least one field to query.", "warning");
+    return;
+  }
+
+  const filterClause = document.getElementById("studio-filter-clause").value.trim() || null;
+  const sortField = document.getElementById("studio-sort-field").value.trim() || null;
+  const sortOrder = document.getElementById("studio-sort-order").value;
+  const recordLimit = parseInt(document.getElementById("studio-record-limit").value, 10) || 50;
+
+  const btn = document.getElementById("btn-execute-custom-query");
+  btn.disabled = true;
+  btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i><span>Executing SOQL & Pulling Data...</span>`;
+
+  const tbody = document.getElementById("custom-query-tbody");
+  tbody.innerHTML = `<tr><td colspan="10" class="py-16 text-center text-slate-400"><i class="fa-solid fa-spinner animate-spin text-2xl text-indigo-400 block mb-2"></i>Querying Live Salesforce...</td></tr>`;
+
+  try {
+    const payload = {
+      sobject,
+      fields,
+      mappings: studioFieldMappings,
+      filter_clause: filterClause,
+      sort_field: sortField,
+      sort_order: sortOrder,
+      record_limit: recordLimit
+    };
+
+    const res = await fetch(`${API_BASE}/api/salesforce/custom-query`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+
+    if (res.status === 401) {
+      isSalesforceConnected = false;
+      renderLockedStateForAllTabs();
+      return;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Query execution failed");
+    }
+
+    const data = await res.json();
+    studioLastResult = data;
+
+    // Reveal on-demand results section and smooth scroll
+    const resultsSection = document.getElementById("studio-results-section");
+    if (resultsSection) {
+      resultsSection.classList.remove("hidden");
+      setTimeout(() => {
+        resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    }
+
+    // Show SOQL bar
+    const soqlBar = document.getElementById("custom-soql-bar");
+    const soqlText = document.getElementById("custom-soql-text");
+    if (soqlBar && soqlText) {
+      soqlText.textContent = data.soql;
+      soqlBar.classList.remove("hidden");
+    }
+
+    const countBadge = document.getElementById("custom-query-count-badge");
+    if (countBadge) {
+      countBadge.textContent = `${data.total} records pulled`;
+    }
+
+    renderCustomQueryResultTable(data);
+    
+    // Update raw JSON
+    const rawPre = document.getElementById("custom-query-raw-json");
+    if (rawPre) {
+      rawPre.textContent = JSON.stringify(data, null, 2);
+    }
+
+    showToast(`Successfully pulled ${data.total} records from Salesforce!`, "success");
+  } catch (err) {
+    const resultsSection = document.getElementById("studio-results-section");
+    if (resultsSection) {
+      resultsSection.classList.remove("hidden");
+      resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    tbody.innerHTML = `<tr><td colspan="10" class="py-12 text-center text-red-400"><i class="fa-solid fa-triangle-exclamation text-2xl mb-2 text-red-500 block"></i>Query Execution Error: ${err.message}</td></tr>`;
+    showToast(`Query Error: ${err.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<i class="fa-solid fa-play"></i><span>Execute & Pull Live Data</span>`;
+  }
+}
+
+function closeStudioResultsSection() {
+  const resultsSection = document.getElementById("studio-results-section");
+  if (resultsSection) {
+    resultsSection.classList.add("hidden");
+  }
+}
+
+function renderCustomQueryResultTable(data) {
+  const thead = document.getElementById("custom-query-thead");
+  const tbody = document.getElementById("custom-query-tbody");
+  if (!thead || !tbody) return;
+
+  const records = data.records || [];
+  if (records.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="10" class="py-12 text-center text-slate-500">No records returned matching your query criteria.</td></tr>`;
+    return;
+  }
+
+  // Determine headers from mappings or fields
+  const fields = data.fields || [];
+  const mappings = data.mappings || {};
+
+  const headers = fields.map(f => {
+    const alias = mappings[f] || f;
+    const isMapped = alias !== f;
+    return `
+      <th class="py-3 px-4 font-semibold whitespace-nowrap">
+        <div class="flex flex-col">
+          <span class="text-white">${alias}</span>
+          ${isMapped ? `<span class="text-[9px] font-mono text-slate-500 lowercase">(${f})</span>` : ''}
+        </div>
+      </th>
+    `;
+  }).join("");
+
+  thead.innerHTML = `<tr>${headers}</tr>`;
+
+  tbody.innerHTML = records.map(r => {
+    const raw = r._raw || {};
+    const cells = fields.map(f => {
+      let val = raw[f];
+      if (f.toLowerCase() === "id" && val) {
+        return `<td class="py-3 px-4">${renderSalesforceIdLink(val)}</td>`;
+      }
+      if (val === null || val === undefined) {
+        return `<td class="py-3 px-4 font-mono text-xs text-slate-600">-</td>`;
+      }
+      if (typeof val === "boolean") {
+        return `<td class="py-3 px-4"><span class="px-1.5 py-0.5 rounded text-[10px] font-mono ${val ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-slate-800 text-slate-400'}">${val}</span></td>`;
+      }
+      if (typeof val === "object") {
+        val = JSON.stringify(val);
+      }
+      return `<td class="py-3 px-4 text-xs text-slate-300 truncate max-w-xs" title="${String(val)}">${String(val)}</td>`;
+    }).join("");
+
+    return `<tr class="hover:bg-slate-800/50 transition">${cells}</tr>`;
+  }).join("");
+}
+
+function switchStudioResultView(mode) {
+  const tableWrapper = document.getElementById("studio-table-wrapper");
+  const rawWrapper = document.getElementById("studio-raw-wrapper");
+  const btnTable = document.getElementById("btn-view-table");
+  const btnRaw = document.getElementById("btn-view-raw");
+
+  if (mode === "raw") {
+    if (tableWrapper) tableWrapper.classList.add("hidden");
+    if (rawWrapper) rawWrapper.classList.remove("hidden");
+    if (btnTable) { btnTable.className = "px-2.5 py-1 rounded text-slate-400 hover:text-white text-[11px] transition"; }
+    if (btnRaw) { btnRaw.className = "px-2.5 py-1 rounded bg-indigo-600 text-white font-medium text-[11px] transition"; }
+  } else {
+    if (tableWrapper) tableWrapper.classList.remove("hidden");
+    if (rawWrapper) rawWrapper.classList.add("hidden");
+    if (btnTable) { btnTable.className = "px-2.5 py-1 rounded bg-indigo-600 text-white font-medium text-[11px] transition"; }
+    if (btnRaw) { btnRaw.className = "px-2.5 py-1 rounded text-slate-400 hover:text-white text-[11px] transition"; }
+  }
+}
+
+function copyExecutedSoql() {
+  const soql = document.getElementById("custom-soql-text").textContent;
+  if (!soql) return;
+  navigator.clipboard.writeText(soql).then(() => {
+    const textEl = document.getElementById("copy-soql-text");
+    const orig = textEl.textContent;
+    textEl.textContent = "Copied!";
+    showToast("SOQL query copied to clipboard!", "success", 2000);
+    setTimeout(() => { textEl.textContent = orig; }, 2000);
+  });
+}
+
+function exportCustomQueryResult(format) {
+  if (!studioLastResult || !studioLastResult.records || studioLastResult.records.length === 0) {
+    showToast("No records available to export. Run a query first!", "warning");
+    return;
+  }
+
+  const sobject = studioLastResult.sobject || "SalesforceExport";
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+  if (format === "json") {
+    const mappedData = studioLastResult.records.map(r => r._mapped || r._raw);
+    const jsonStr = JSON.stringify(mappedData, null, 2);
+    const blob = new Blob([jsonStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${sobject}-mapped-export-${timestamp}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Exported JSON successfully!", "success");
+  } else if (format === "csv") {
+    const records = studioLastResult.records.map(r => r._mapped || r._raw);
+    const headers = Object.keys(records[0] || {});
+    
+    const csvRows = [];
+    csvRows.push(headers.map(h => `"${h.replace(/"/g, '""')}"`).join(","));
+    
+    for (const r of records) {
+      const values = headers.map(h => {
+        const val = r[h] === null || r[h] === undefined ? "" : String(r[h]);
+        return `"${val.replace(/"/g, '""')}"`;
+      });
+      csvRows.push(values.join(","));
+    }
+
+    const csvContent = csvRows.join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${sobject}-mapped-export-${timestamp}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Exported CSV successfully!", "success");
+  }
+}
+
+async function loadCustomMappingsList() {
+  if (!isSalesforceConnected || !getSessionId()) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/admin/mappings`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) return;
+
+    const data = await res.json();
+    studioSavedMappings = data.mappings || [];
+
+    const select = document.getElementById("mapping-profile-select");
+    if (!select) return;
+
+    select.innerHTML = `<option value="">-- Choose or Create Profile (${studioSavedMappings.length} saved) --</option>` +
+      studioSavedMappings.map(m => `
+        <option value="${m.id}">${m.name} (${m.sobject} - ${m.selected_fields.length} fields)</option>
+      `).join("");
+  } catch (err) {
+    console.error("Failed to load custom mappings:", err);
+  }
+}
+
+function onMappingProfileSelected() {
+  const select = document.getElementById("mapping-profile-select");
+  const profileId = parseInt(select.value, 10);
+
+  const btnUpdate = document.getElementById("btn-update-profile");
+  const btnDelete = document.getElementById("btn-delete-profile");
+
+  if (!profileId) {
+    studioCurrentProfileId = null;
+    if (btnUpdate) btnUpdate.classList.add("hidden");
+    if (btnDelete) btnDelete.classList.add("hidden");
+    return;
+  }
+
+  const profile = studioSavedMappings.find(m => m.id === profileId);
+  if (!profile) return;
+
+  studioCurrentProfileId = profile.id;
+  document.getElementById("mapping-profile-name").value = profile.name;
+
+  // Set sobject
+  const sfSelect = document.getElementById("studio-sobject-select");
+  const customInput = document.getElementById("studio-custom-sobject-input");
+  const standardValues = ["Account", "Contact", "Opportunity", "Lead", "Case", "User", "Task"];
+  if (standardValues.includes(profile.sobject)) {
+    sfSelect.value = profile.sobject;
+    customInput.classList.add("hidden");
+  } else {
+    sfSelect.value = "custom";
+    customInput.value = profile.sobject;
+    customInput.classList.remove("hidden");
+  }
+
+  // Set preferences
+  document.getElementById("studio-filter-clause").value = profile.filter_clause || "";
+  document.getElementById("studio-sort-field").value = profile.sort_field || "";
+  document.getElementById("studio-sort-order").value = profile.sort_order || "DESC";
+  document.getElementById("studio-record-limit").value = String(profile.record_limit || 50);
+
+  // Set selected fields & mappings
+  studioSelectedFields = new Set(profile.selected_fields || []);
+  studioFieldMappings = { ...(profile.field_mappings || {}) };
+
+  if (btnUpdate) btnUpdate.classList.remove("hidden");
+  if (btnDelete) btnDelete.classList.remove("hidden");
+
+  fetchSobjectSchema().then(() => {
+    showToast(`Loaded mapping profile '${profile.name}'`, "info");
+  });
+}
+
+async function saveCurrentMappingProfile(isUpdate = false) {
+  if (!isSalesforceConnected || !getSessionId()) {
+    showToast("Please connect to Salesforce first.", "warning");
+    return;
+  }
+
+  const name = document.getElementById("mapping-profile-name").value.trim();
+  if (!name) {
+    showToast("Please provide a name for this mapping profile.", "warning");
+    return;
+  }
+
+  const sobject = getSelectedStudioSobject();
+  const selected_fields = Array.from(studioSelectedFields);
+  if (selected_fields.length === 0) {
+    showToast("Please select at least one field.", "warning");
+    return;
+  }
+
+  const payload = {
+    name,
+    sobject,
+    selected_fields,
+    field_mappings: studioFieldMappings,
+    filter_clause: document.getElementById("studio-filter-clause").value.trim() || null,
+    sort_field: document.getElementById("studio-sort-field").value.trim() || null,
+    sort_order: document.getElementById("studio-sort-order").value,
+    record_limit: parseInt(document.getElementById("studio-record-limit").value, 10) || 50
+  };
+
+  try {
+    const url = isUpdate && studioCurrentProfileId ? `${API_BASE}/api/admin/mappings/${studioCurrentProfileId}` : `${API_BASE}/api/admin/mappings`;
+    const method = isUpdate && studioCurrentProfileId ? "PUT" : "POST";
+
+    const res = await fetch(url, {
+      method,
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to save profile");
+    }
+
+    const data = await res.json();
+    showToast(data.message || `Profile '${name}' saved successfully!`, "success");
+    await loadCustomMappingsList();
+  } catch (err) {
+    showToast(`Save Error: ${err.message}`, "error");
+  }
+}
+
+async function deleteCurrentMappingProfile() {
+  if (!studioCurrentProfileId) return;
+  if (!confirm("Are you sure you want to delete this custom mapping profile?")) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/admin/mappings/${studioCurrentProfileId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to delete");
+    }
+    showToast("Mapping profile deleted successfully", "success");
+    resetMappingStudioForm();
+    await loadCustomMappingsList();
+  } catch (err) {
+    showToast(`Delete Error: ${err.message}`, "error");
+  }
+}
+
+function resetMappingStudioForm() {
+  studioCurrentProfileId = null;
+  document.getElementById("mapping-profile-select").value = "";
+  document.getElementById("mapping-profile-name").value = "";
+  document.getElementById("studio-filter-clause").value = "";
+  document.getElementById("studio-sort-field").value = "";
+  document.getElementById("studio-record-limit").value = "50";
+  
+  const btnUpdate = document.getElementById("btn-update-profile");
+  const btnDelete = document.getElementById("btn-delete-profile");
+  if (btnUpdate) btnUpdate.classList.add("hidden");
+  if (btnDelete) btnDelete.classList.add("hidden");
 }
 
 // Initial Boot

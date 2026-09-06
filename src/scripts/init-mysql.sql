@@ -99,3 +99,21 @@ CREATE TABLE IF NOT EXISTS salesforce_opportunities (
     INDEX idx_sf_opp_stage (stage_name),
     INDEX idx_sf_opp_account (account_salesforce_id)
 ) ENGINE=InnoDB;
+
+-- 5. Salesforce Custom Mappings & Query Profiles Table
+CREATE TABLE IF NOT EXISTS salesforce_custom_mappings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    session_id VARCHAR(100) NULL,
+    name VARCHAR(100) NOT NULL,
+    sobject VARCHAR(100) NOT NULL,
+    selected_fields TEXT NOT NULL,
+    field_mappings TEXT NOT NULL,
+    filter_clause TEXT NULL,
+    sort_field VARCHAR(100) NULL,
+    sort_order VARCHAR(10) DEFAULT 'DESC',
+    record_limit INT DEFAULT 50,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_mapping_session (session_id),
+    INDEX idx_mapping_sobject (sobject)
+) ENGINE=InnoDB;

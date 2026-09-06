@@ -41,6 +41,9 @@ This document details the architecture, data models, integration flows, and Dock
 │   │ ├───────────────────────┤ │                                                          │ │
 │   │ │ salesforce_           │ │                                                          │ │
 │   │ │ opportunities         │ │                                                          │ │
+│   │ ├───────────────────────┤ │                                                          │ │
+│   │ │ salesforce_custom_    │ │                                                          │ │
+│   │ │ mappings              │ │                                                          │ │
 │   │ └───────────────────────┘ │                                                          │ │
 │   └───────────────────────────┘                                                          │ │
 │                  ▲                                                                           │
@@ -180,8 +183,41 @@ All data inspection and synchronization routes are wrapped with the `require_aut
 
 ### Protected Endpoints & UI Views
 - **CRM Live Explorers:** `GET /api/salesforce/records/{sobject}`, `POST /api/salesforce/records/{sobject}`
+- **Admin Mapping Studio & MySQL Schema:** `GET /api/salesforce/describe/{sobject}`, `POST /api/salesforce/custom-query`, `GET /api/admin/mappings`, `GET /api/db/schema-for-sobject/{sobject}`, `POST /api/db/add-column`
 - **Relational MySQL DB:** `GET /api/db/accounts`, `GET /api/db/contacts`, `GET /api/db/opportunities`
 - **AWS Infrastructure:** `GET /api/aws/dynamodb/records`, `GET /api/aws/s3/files`, `GET /api/aws/s3/file`, `GET /api/aws/sqs/stats`
 - **Secrets & Governance:** `GET /api/secrets`, `GET /api/logs`
 - **Sync Triggers & UI:** `POST /api/sync/record`, `POST /api/sync/salesforce-to-aws`, `POST /api/sync/aws-to-salesforce` (Sync Pipelines tab is completely hidden when disconnected)
+
+---
+
+## 🛠️ Admin Custom Mapping & On-Demand Dynamic MySQL Column Architecture
+
+```
+┌───────────────────────────────┐               ┌─────────────────────────────────────────┐
+│     Dashboard UI (Port 3000)  │               │      Integration Engine (Port 8000)     │
+│   (Admin Mapping Studio Tab)  │               │                                         │
+└───────────────┬───────────────┘               └────────────────────┬────────────────────┘
+                │                                                    │
+                │ 1. GET /api/salesforce/describe/{sobject}          │
+                ├───────────────────────────────────────────────────►│ (Introspects Live SF Fields)
+                │                                                    │
+                │ 2. GET /api/db/schema-for-sobject/{sobject}        │
+                ├───────────────────────────────────────────────────►│ (Inspects information_schema)
+                │                                                    │
+                │◄───────────────────────────────────────────────────┤
+                │ (Populates dropdowns with actual MySQL columns)    │
+                │                                                    │
+                │ 3. User clicks "+ New DB Field"                    │
+                │    POST /api/db/add-column                         │
+                ├───────────────────────────────────────────────────►│ (Sanitizes identifier & type)
+                │    {sobject, column_name, data_type}               │ ALTER TABLE <table> ADD COLUMN
+                │                                                    │
+                │◄───────────────────────────────────────────────────┤
+                │ (Auto-maps new MySQL column to active SF field)    │
+                │                                                    │
+                │ 4. POST /api/salesforce/custom-query               │
+                ├───────────────────────────────────────────────────►│ (Builds dynamic SOQL & maps)
+                │                                                    │
+```
 

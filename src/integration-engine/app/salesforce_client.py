@@ -80,4 +80,31 @@ class SalesforceClient:
                 return data.get("records", [])
             raise Exception(f"Salesforce SOQL failed ({resp.status_code}): {resp.text}")
 
+    async def describe_sobject(self, sobject: str, access_token: str, instance_url: str) -> Dict[str, Any]:
+        """Fetch full sObject field metadata from Salesforce Describe API"""
+        headers = self._get_headers(access_token)
+        url = f"{instance_url.rstrip('/')}/services/data/{self.api_version}/sobjects/{sobject}/describe"
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                fields = [
+                    {
+                        "name": f.get("name"),
+                        "label": f.get("label"),
+                        "type": f.get("type"),
+                        "custom": f.get("custom", False),
+                        "nillable": f.get("nillable", True),
+                        "calculated": f.get("calculated", False)
+                    }
+                    for f in data.get("fields", [])
+                ]
+                return {
+                    "name": data.get("name"),
+                    "label": data.get("label"),
+                    "keyPrefix": data.get("keyPrefix"),
+                    "fields": fields
+                }
+            raise Exception(f"Salesforce describe failed ({resp.status_code}): {resp.text}")
+
 sf_client = SalesforceClient()
