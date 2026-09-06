@@ -15,6 +15,7 @@
             brand: {
               sf: '#00A1E0',
               aws: '#FF9900',
+              mysql: '#00758F',
               dark: '#0F172A',
               card: '#1E293B',
               border: '#334155'
@@ -27,79 +28,138 @@
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     .tab-active { border-bottom: 3px solid #00A1E0; color: #00A1E0; font-weight: 600; }
+    .toast-item {
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col relative">
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col space-y-2.5 pointer-events-none max-w-sm w-full px-4 sm:px-0" aria-live="polite"></div>
+
+  <!-- Notification Banner for OAuth callbacks -->
+  <div id="oauth-alert" class="hidden px-4 py-2.5 text-xs text-center font-medium transition flex items-center justify-between">
+    <span id="oauth-alert-text" class="flex-1"></span>
+    <button onclick="dismissAlert()" class="ml-4 text-slate-300 hover:text-white">&times;</button>
+  </div>
 
   <!-- Navigation Header -->
-  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+      
       <div class="flex items-center space-x-3">
-        <div class="flex items-center space-x-1.5 text-2xl font-bold">
+        <div class="flex items-center space-x-2 text-xl font-bold">
           <span class="text-[#00A1E0]"><i class="fa-brands fa-salesforce"></i> Salesforce</span>
-          <span class="text-slate-400 text-sm">⟷</span>
+          <span class="text-slate-400 text-xs">⟷</span>
           <span class="text-[#FF9900]"><i class="fa-brands fa-aws"></i> AWS LocalStack</span>
         </div>
-        <span class="bg-blue-900/50 text-blue-300 text-xs px-2.5 py-0.5 rounded-full border border-blue-700">Docker Dev Environment</span>
       </div>
 
-      <div class="flex items-center space-x-4">
-        <!-- Health Status Badges -->
-        <div id="sf-health" class="flex items-center space-x-1 text-xs bg-slate-800 px-3 py-1.5 rounded-md border border-slate-700">
+      <!-- System Health Badges & Actions -->
+      <div class="flex items-center space-x-3">
+        <div id="sf-health" class="flex items-center space-x-1.5 text-xs bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
           <span class="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></span>
-          <span>Salesforce: Connecting...</span>
+          <span>Checking...</span>
         </div>
-        <div id="aws-health" class="flex items-center space-x-1 text-xs bg-slate-800 px-3 py-1.5 rounded-md border border-slate-700">
+
+        <div id="aws-health" class="flex items-center space-x-1.5 text-xs bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
           <span class="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></span>
-          <span>AWS: Connecting...</span>
+          <span>AWS...</span>
         </div>
-        <button onclick="refreshAll()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-1.5 rounded-md flex items-center space-x-1 transition shadow">
+
+        <button onclick="refreshAll()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-1.5 rounded-lg flex items-center space-x-1 transition shadow">
           <i class="fa-solid fa-rotate"></i>
           <span>Refresh</span>
         </button>
+
       </div>
     </div>
 
-    <!-- Tabs -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-8 border-t border-slate-800/60 text-sm">
-      <button onclick="switchTab('salesforce')" id="tab-btn-salesforce" class="py-3 px-1 tab-active flex items-center space-x-2 text-slate-300 hover:text-white transition">
+    <!-- Sub-Header: Active Salesforce Session & Expiry Card -->
+    <div class="bg-slate-950/60 border-t border-slate-800/80 px-4 sm:px-6 lg:px-8 py-2.5 text-xs">
+      <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3" id="user-session-bar">
+        <div class="flex items-center space-x-4">
+          <div class="flex items-center space-x-1.5">
+            <span class="text-slate-400">Salesforce Status:</span>
+            <span id="session-status-badge" class="px-2 py-0.5 rounded text-[11px] bg-slate-800 text-slate-300">Disconnected</span>
+          </div>
+          <div id="session-details-group" class="hidden flex items-center space-x-4 text-slate-300">
+            <span>Org ID: <code id="session-org-id" class="text-blue-400">-</code></span>
+            <span>Instance: <code id="session-instance-url" class="text-cyan-400">-</code></span>
+            <span class="flex items-center space-x-1">
+              <i class="fa-solid fa-clock text-amber-400"></i>
+              <span>Token Expiry: <b id="session-countdown" class="text-amber-300">-</b></span>
+            </span>
+          </div>
+        </div>
+
+        <!-- OAuth Action Buttons -->
+        <div class="flex items-center space-x-2" id="session-actions">
+          <button id="btn-oauth-login" onclick="startSalesforceLogin()" class="bg-[#00A1E0] hover:bg-[#0089bd] text-white font-medium px-3 py-1 rounded-md text-xs flex items-center space-x-1 transition shadow">
+            <i class="fa-brands fa-salesforce"></i>
+            <span>Connect Live Salesforce</span>
+          </button>
+          <button id="btn-oauth-refresh" onclick="forceRefreshToken()" class="hidden bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-800/60 px-2.5 py-1 rounded-md text-xs flex items-center space-x-1 transition">
+            <i class="fa-solid fa-arrows-rotate"></i>
+            <span>Refresh Token</span>
+          </button>
+          <button id="btn-oauth-disconnect" onclick="disconnectSalesforce()" class="hidden bg-slate-800 hover:bg-red-950 text-red-400 border border-red-900/60 px-2.5 py-1 rounded-md text-xs flex items-center space-x-1 transition">
+            <i class="fa-solid fa-link-slash"></i>
+            <span>Disconnect</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-8 border-t border-slate-800/60 text-sm overflow-x-auto">
+      <button onclick="switchTab('salesforce')" id="tab-btn-salesforce" class="py-3 px-1 tab-active flex items-center space-x-2 text-slate-300 hover:text-white transition whitespace-nowrap">
         <i class="fa-brands fa-salesforce text-[#00A1E0]"></i>
-        <span>Salesforce CRM</span>
+        <span>Live Salesforce CRM</span>
       </button>
-      <button onclick="switchTab('dynamodb')" id="tab-btn-dynamodb" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition">
-        <i class="fa-solid fa-database text-[#FF9900]"></i>
+      <button onclick="switchTab('mysql')" id="tab-btn-mysql" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition whitespace-nowrap">
+        <i class="fa-solid fa-database text-[#00758F]"></i>
+        <span>MySQL Synced DB</span>
+      </button>
+      <button onclick="switchTab('dynamodb')" id="tab-btn-dynamodb" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition whitespace-nowrap">
+        <i class="fa-solid fa-cloud text-[#FF9900]"></i>
         <span>AWS DynamoDB</span>
       </button>
-      <button onclick="switchTab('s3')" id="tab-btn-s3" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition">
+      <button onclick="switchTab('s3')" id="tab-btn-s3" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition whitespace-nowrap">
         <i class="fa-solid fa-box-archive text-emerald-400"></i>
         <span>AWS S3 Archive</span>
       </button>
-      <button onclick="switchTab('sqs')" id="tab-btn-sqs" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition">
+      <button onclick="switchTab('sqs')" id="tab-btn-sqs" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition whitespace-nowrap">
         <i class="fa-solid fa-layer-group text-purple-400"></i>
         <span>AWS SQS Queues</span>
       </button>
-      <button onclick="switchTab('sync')" id="tab-btn-sync" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition">
-        <i class="fa-solid fa-bolt text-yellow-400"></i>
-        <span>Sync & Event Actions</span>
+      <button onclick="switchTab('secrets')" id="tab-btn-secrets" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition whitespace-nowrap">
+        <i class="fa-solid fa-key text-yellow-400"></i>
+        <span>Secrets Manager</span>
       </button>
-      <button onclick="switchTab('logs')" id="tab-btn-logs" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition">
-        <i class="fa-solid fa-clock-rotate-left text-cyan-400"></i>
+      <button onclick="switchTab('sync')" id="tab-btn-sync" class="hidden py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition whitespace-nowrap">
+        <i class="fa-solid fa-bolt text-cyan-400"></i>
+        <span>Sync Pipelines</span>
+      </button>
+      <button onclick="switchTab('logs')" id="tab-btn-logs" class="py-3 px-1 flex items-center space-x-2 text-slate-400 hover:text-white transition whitespace-nowrap">
+        <i class="fa-solid fa-clock-rotate-left text-indigo-400"></i>
         <span>Audit Logs (<span id="log-count">0</span>)</span>
       </button>
     </div>
   </header>
 
   <!-- Main Content Area -->
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full">
 
     <!-- TAB 1: Salesforce CRM Explorer -->
     <section id="tab-salesforce" class="space-y-6">
       <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 p-4 rounded-xl border border-slate-800">
         <div>
           <h2 class="text-lg font-semibold text-white flex items-center space-x-2">
-            <span>Salesforce sObject Explorer</span>
+            <span>Live Salesforce sObject Explorer</span>
           </h2>
-          <p class="text-xs text-slate-400">View live CRM records or create new entries to trigger automated Change Data Capture (CDC) events into AWS.</p>
+          <p class="text-xs text-slate-400">Viewing real-time sObjects from your live Salesforce instance using authenticated user OAuth token.</p>
         </div>
         <div class="flex items-center space-x-3">
           <select id="sf-object-select" onchange="loadSalesforceRecords()" class="bg-slate-800 border border-slate-700 text-sm rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500">
@@ -130,7 +190,55 @@
             </thead>
             <tbody id="sf-table-body" class="divide-y divide-slate-800">
               <tr>
-                <td colspan="5" class="py-8 text-center text-slate-500">Loading records...</td>
+                <td colspan="5" class="py-8 text-center text-amber-400 font-medium"><i class="fa-solid fa-lock mr-2"></i>Please connect to Salesforce using the "Connect Live Salesforce" button above to view live records.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: MySQL Synced CRM DB -->
+    <section id="tab-mysql" class="space-y-6 hidden">
+      <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-semibold text-white">MySQL Relational DB: <span class="text-[#00758F]">salesforce_accounts, contacts, opportunities</span></h2>
+          <p class="text-xs text-slate-400">Locally persisted CRM tables synchronized from Salesforce via OAuth & "Sync to AWS".</p>
+        </div>
+        <div class="flex items-center space-x-3">
+          <select id="mysql-table-select" onchange="loadMySQLRecords()" class="bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-3 py-2 font-medium">
+            <option value="accounts">Accounts (salesforce_accounts)</option>
+            <option value="contacts">Contacts (salesforce_contacts)</option>
+            <option value="opportunities">Opportunities (salesforce_opportunities)</option>
+          </select>
+          <button onclick="loadMySQLRecords()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-2 rounded-lg border border-slate-700">
+            <i class="fa-solid fa-arrows-rotate mr-1"></i> Refresh Table
+          </button>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm text-slate-300">
+            <thead class="bg-slate-800/80 text-xs uppercase text-slate-400 border-b border-slate-700" id="mysql-table-head">
+              <tr>
+                <th class="py-3 px-4">Local ID</th>
+                <th class="py-3 px-4">Salesforce ID</th>
+                <th class="py-3 px-4">Name / Title</th>
+                <th class="py-3 px-4">Attributes</th>
+                <th class="py-3 px-4">Sync Status</th>
+                <th class="py-3 px-4">Updated At</th>
+              </tr>
+            </thead>
+            <tbody id="mysql-table-body" class="divide-y divide-slate-800">
+              <tr>
+                <td colspan="6" class="py-12 text-center text-amber-400 font-medium">
+                  <div class="flex flex-col items-center justify-center space-y-2">
+                    <i class="fa-solid fa-lock text-3xl text-amber-500"></i>
+                    <span class="text-sm font-semibold">Salesforce Connection Required</span>
+                    <span class="text-xs text-slate-400">Please connect your Live Salesforce account above to view synchronized MySQL database records.</span>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -143,7 +251,7 @@
       <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 flex items-center justify-between">
         <div>
           <h2 class="text-lg font-semibold text-white">AWS DynamoDB: <span class="text-[#FF9900]">SalesforceSyncRecords</span></h2>
-          <p class="text-xs text-slate-400">Table schema: Partition Key = <code class="bg-slate-800 px-1 py-0.5 rounded text-amber-300">sObjectType</code> (HASH), Sort Key = <code class="bg-slate-800 px-1 py-0.5 rounded text-amber-300">salesforceId</code> (RANGE)</p>
+          <p class="text-xs text-slate-400">Mirrored key-value store with partition key <code class="bg-slate-800 px-1 py-0.5 rounded text-amber-300">sObjectType</code> and sort key <code class="bg-slate-800 px-1 py-0.5 rounded text-amber-300">salesforceId</code></p>
         </div>
         <button onclick="loadDynamoDBRecords()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-2 rounded-lg border border-slate-700">
           <i class="fa-solid fa-arrows-rotate mr-1"></i> Scan Table
@@ -164,7 +272,13 @@
             </thead>
             <tbody id="dynamodb-table-body" class="divide-y divide-slate-800">
               <tr>
-                <td colspan="5" class="py-8 text-center text-slate-500">Loading DynamoDB items...</td>
+                <td colspan="5" class="py-12 text-center text-amber-400 font-medium">
+                  <div class="flex flex-col items-center justify-center space-y-2">
+                    <i class="fa-solid fa-lock text-3xl text-amber-500"></i>
+                    <span class="text-sm font-semibold">Salesforce Connection Required</span>
+                    <span class="text-xs text-slate-400">Please connect your Live Salesforce account above to view AWS DynamoDB items.</span>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -174,13 +288,13 @@
 
     <!-- TAB 3: S3 Archive -->
     <section id="tab-s3" class="space-y-6 hidden">
-      <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 flex items-center justify-between">
+      <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 class="text-lg font-semibold text-white">AWS S3 Bucket: <span class="text-emerald-400">salesforce-raw-events</span></h2>
-          <p class="text-xs text-slate-400">Stores immutable JSON event archives generated during Salesforce CDC and batch synchronization.</p>
+          <p class="text-xs text-slate-400">Immutable JSON event archives and backups organized by date partitioning. Click any file to view content.</p>
         </div>
-        <button onclick="loadS3Files()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-2 rounded-lg border border-slate-700">
-          <i class="fa-solid fa-arrows-rotate mr-1"></i> List Objects
+        <button onclick="loadS3Files()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-2 rounded-lg border border-slate-700 transition">
+          <i class="fa-solid fa-arrows-rotate mr-1"></i> Refresh S3 Files
         </button>
       </div>
 
@@ -192,11 +306,18 @@
                 <th class="py-3 px-4">S3 Object Key</th>
                 <th class="py-3 px-4">File Size</th>
                 <th class="py-3 px-4">Last Modified</th>
+                <th class="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody id="s3-table-body" class="divide-y divide-slate-800">
               <tr>
-                <td colspan="3" class="py-8 text-center text-slate-500">Loading S3 objects...</td>
+                <td colspan="4" class="py-12 text-center text-amber-400 font-medium">
+                  <div class="flex flex-col items-center justify-center space-y-2">
+                    <i class="fa-solid fa-lock text-3xl text-amber-500"></i>
+                    <span class="text-sm font-semibold">Salesforce Connection Required</span>
+                    <span class="text-xs text-slate-400">Please connect your Live Salesforce account above to view AWS S3 archives.</span>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -208,27 +329,68 @@
     <section id="tab-sqs" class="space-y-6 hidden">
       <div class="bg-slate-900 p-4 rounded-xl border border-slate-800">
         <h2 class="text-lg font-semibold text-white">AWS SQS Message Queues</h2>
-        <p class="text-xs text-slate-400">Real-time status of inbound ingestion queues and Dead-Letter Queues (DLQ).</p>
+        <p class="text-xs text-slate-400">Asynchronous ingestion and Dead Letter Queues (DLQ).</p>
       </div>
-
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="sqs-cards">
-        <!-- SQS cards rendered dynamically -->
+        <div class="col-span-2 text-center text-amber-400 py-12 border border-amber-900/40 bg-amber-950/20 rounded-xl space-y-2">
+          <i class="fa-solid fa-lock text-3xl text-amber-500"></i>
+          <p class="text-sm font-semibold">Salesforce Connection Required</p>
+          <p class="text-xs text-slate-400">Please connect your Live Salesforce account above to view AWS SQS message queues.</p>
+        </div>
       </div>
     </section>
 
-    <!-- TAB 5: Actions & Simulators -->
+    <!-- TAB 5: Secrets Manager Explorer -->
+    <section id="tab-secrets" class="space-y-6 hidden">
+      <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-white">AWS Secrets Manager: <span class="text-yellow-400">OAuth Refresh Tokens</span></h2>
+          <p class="text-xs text-slate-400">Replicating AWS Secrets Manager: Sensitive Refresh Tokens and Client Credentials are never stored in plain database fields.</p>
+        </div>
+        <button onclick="loadSecrets()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-2 rounded-lg border border-slate-700">
+          <i class="fa-solid fa-arrows-rotate mr-1"></i> List Secrets
+        </button>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm text-slate-300">
+            <thead class="bg-slate-800/80 text-xs uppercase text-slate-400 border-b border-slate-700">
+              <tr>
+                <th class="py-3 px-4">Secret Name</th>
+                <th class="py-3 px-4">ARN</th>
+                <th class="py-3 px-4">Description</th>
+                <th class="py-3 px-4">Last Changed</th>
+              </tr>
+            </thead>
+            <tbody id="secrets-table-body" class="divide-y divide-slate-800">
+              <tr>
+                <td colspan="4" class="py-12 text-center text-amber-400 font-medium">
+                  <div class="flex flex-col items-center justify-center space-y-2">
+                    <i class="fa-solid fa-lock text-3xl text-amber-500"></i>
+                    <span class="text-sm font-semibold">Salesforce Connection Required</span>
+                    <span class="text-xs text-slate-400">Please connect your Live Salesforce account above to view AWS Secrets Manager.</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 6: Sync Actions -->
     <section id="tab-sync" class="space-y-6 hidden">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         
-        <!-- Salesforce to AWS Full Sync Card -->
         <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
           <div class="flex items-center space-x-3">
             <div class="p-3 bg-blue-900/40 rounded-lg text-blue-400 text-xl">
               <i class="fa-solid fa-cloud-arrow-up"></i>
             </div>
             <div>
-              <h3 class="font-semibold text-white">Salesforce ➔ AWS Full Sync</h3>
-              <p class="text-xs text-slate-400">Extracts all sObjects from Salesforce and mirrors them into DynamoDB and S3.</p>
+              <h3 class="font-semibold text-white">Live Salesforce ➔ AWS Full Sync</h3>
+              <p class="text-xs text-slate-400">Pulls records for active user via SOQL and stores them into DynamoDB and S3.</p>
             </div>
           </div>
           <button onclick="triggerFullSync()" id="btn-full-sync" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-lg transition text-sm flex items-center justify-center space-x-2">
@@ -237,20 +399,19 @@
           </button>
         </div>
 
-        <!-- AWS to Salesforce Push Simulator -->
         <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-4">
           <div class="flex items-center space-x-3">
             <div class="p-3 bg-amber-900/40 rounded-lg text-amber-400 text-xl">
               <i class="fa-solid fa-cloud-arrow-down"></i>
             </div>
             <div>
-              <h3 class="font-semibold text-white">AWS ➔ Salesforce Record Upsert</h3>
-              <p class="text-xs text-slate-400">Push a synthetic business event from AWS into Salesforce REST endpoints.</p>
+              <h3 class="font-semibold text-white">AWS ➔ Live Salesforce Upsert</h3>
+              <p class="text-xs text-slate-400">Push synthetic data into Live Salesforce using the active user's credentials.</p>
             </div>
           </div>
           <div class="space-y-3">
-            <input type="text" id="aws-to-sf-name" placeholder="Account Name (e.g. Lambda Analytics Inc)" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-white focus:outline-none focus:border-amber-500">
-            <input type="text" id="aws-to-sf-industry" placeholder="Industry (e.g. Artificial Intelligence)" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-white focus:outline-none focus:border-amber-500">
+            <input type="text" id="aws-to-sf-name" placeholder="Account Name (e.g. Lambda Enterprise Suite)" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-white focus:outline-none focus:border-amber-500">
+            <input type="text" id="aws-to-sf-industry" placeholder="Industry (e.g. Cloud AI & Robotics)" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-white focus:outline-none focus:border-amber-500">
             <button onclick="triggerAwsToSf()" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-medium py-2 px-4 rounded-lg transition text-sm flex items-center justify-center space-x-2">
               <i class="fa-solid fa-paper-plane"></i>
               <span>Push to Salesforce</span>
@@ -261,12 +422,12 @@
       </div>
     </section>
 
-    <!-- TAB 6: Audit Logs -->
+    <!-- TAB 7: Audit Logs -->
     <section id="tab-logs" class="space-y-6 hidden">
       <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 flex items-center justify-between">
         <div>
           <h2 class="text-lg font-semibold text-white">Integration Audit & CDC Stream Log</h2>
-          <p class="text-xs text-slate-400">Immutable trace of events, payloads, timestamps, and error diagnostics.</p>
+          <p class="text-xs text-slate-400">Real-time log of OAuth exchanges, token refreshes, SOQL queries, and sync operations.</p>
         </div>
         <button onclick="loadLogs()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-2 rounded-lg border border-slate-700">
           <i class="fa-solid fa-arrows-rotate mr-1"></i> Refresh Logs
@@ -275,7 +436,11 @@
 
       <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow">
         <div id="logs-container" class="divide-y divide-slate-800 font-mono text-xs max-h-[600px] overflow-y-auto p-4 space-y-3">
-          <div class="text-slate-500 text-center py-6">No logs recorded yet.</div>
+          <div class="text-amber-400 text-center py-12 border border-amber-900/40 bg-amber-950/20 rounded-xl space-y-2">
+            <i class="fa-solid fa-lock text-3xl text-amber-500"></i>
+            <p class="text-sm font-semibold">Salesforce Connection Required</p>
+            <p class="text-xs text-slate-400">Please connect your Live Salesforce account above to view integration audit logs.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -310,7 +475,51 @@
       </div>
       <div class="flex justify-end space-x-3 pt-3 border-t border-slate-800">
         <button onclick="closeCreateModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg">Cancel</button>
-        <button onclick="submitCreateRecord()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg font-medium">Save & Dispatch CDC</button>
+        <button onclick="submitCreateRecord()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg font-medium">Create in Salesforce</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- S3 File Content Viewer Modal -->
+  <div id="s3-viewer-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl flex flex-col max-h-[90vh] shadow-2xl overflow-hidden">
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+        <div class="flex items-center space-x-3 truncate">
+          <div class="p-2 bg-emerald-950/80 rounded-lg text-emerald-400 border border-emerald-800/60">
+            <i class="fa-solid fa-file-code text-base"></i>
+          </div>
+          <div class="truncate">
+            <h3 class="text-sm font-semibold text-white font-mono truncate" id="s3-modal-title">s3://salesforce-raw-events/file.json</h3>
+            <div class="flex items-center space-x-3 text-[11px] text-slate-400 mt-0.5">
+              <span id="s3-modal-bucket" class="bg-slate-800 px-2 py-0.5 rounded text-slate-300">salesforce-raw-events</span>
+              <span>Size: <b id="s3-modal-size" class="text-slate-200">-</b></span>
+              <span>Modified: <b id="s3-modal-modified" class="text-slate-200">-</b></span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button onclick="copyS3Content()" id="btn-copy-s3" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-copy"></i>
+            <span id="copy-btn-text">Copy JSON</span>
+          </button>
+          <button onclick="downloadS3Content()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-download"></i>
+            <span>Download</span>
+          </button>
+          <button onclick="closeS3ViewerModal()" class="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition text-lg">&times;</button>
+        </div>
+      </div>
+
+      <!-- Modal Body (Code View) -->
+      <div class="p-6 overflow-y-auto flex-1 bg-slate-950">
+        <pre id="s3-modal-content" class="text-xs font-mono text-emerald-300 whitespace-pre-wrap break-words selection:bg-emerald-800 selection:text-white">Loading content...</pre>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between text-xs text-slate-500">
+        <span>Format: JSON / UTF-8</span>
+        <button onclick="closeS3ViewerModal()" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg">Close</button>
       </div>
     </div>
   </div>

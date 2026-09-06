@@ -2,8 +2,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install Vercel CLI globally
-RUN npm install -g vercel
+# Install Vercel's official Serve CLI and Vercel CLI
+RUN npm install -g serve vercel
 
 COPY package.json ./
 COPY vercel.json ./
@@ -14,4 +14,4 @@ EXPOSE 3000
 
 ENV PORT=3000
 
-CMD ["vercel", "dev", "--listen", "0.0.0.0:3000", "--yes"]
+CMD ["serve", "-s", ".", "-l", "3000"]

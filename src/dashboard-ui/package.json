@@ -1,12 +1,13 @@
 {
   "name": "salesforce-aws-dashboard",
   "version": "1.0.0",
-  "description": "Salesforce Live <-> AWS LocalStack Web UI Dashboard powered by Vercel CLI",
+  "description": "Salesforce Live <-> AWS LocalStack Web UI Dashboard (Vercel Serve)",
   "scripts": {
-    "dev": "vercel dev --listen 0.0.0.0:3000 --yes",
-    "start": "vercel dev --listen 0.0.0.0:3000 --yes"
+    "dev": "serve -s . -l 3000",
+    "start": "serve -s . -l 3000"
   },
   "dependencies": {
+    "serve": "^14.2.4",
     "vercel": "latest"
   }
 }

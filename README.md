@@ -1,15 +1,16 @@
-# Salesforce (Live) <-> AWS Integration Platform (Docker Dev Replica)
+# Salesforce (Live) <-> AWS Integration Platform (OAuth 2.0 Auth Code & MySQL)
 
-A complete local Docker environment replicating an end-to-end integration between **Live Salesforce** and **AWS Cloud Services** (LocalStack S3, DynamoDB, SQS) with a **Vercel CLI-powered** Web UI Dashboard.
+A complete local Docker environment replicating an end-to-end integration between **Live Salesforce** (via **OAuth 2.0 Authorization Code Flow**) and **AWS Cloud Services** (LocalStack S3, DynamoDB, SQS, Secrets Manager) with **MySQL 8.0 Multi-User Token Expiration Management** and a **Vercel CLI-powered** Web UI Dashboard.
 
 ---
 
 ## 🌟 Architecture & Features
-- **Centralized `src/` Module Hierarchy:** All development code is organized into sub-modules under `src/`.
-- **Live Salesforce CRM Connectivity:** Direct OAuth 2.0 integration and live SOQL query execution for standard and custom sObjects.
-- **Local AWS Cloud (LocalStack):** S3 (`salesforce-raw-events`, `salesforce-backups`), DynamoDB (`SalesforceSyncRecords`), and SQS (`salesforce-inbound-queue`, `salesforce-deadletter-queue`).
-- **Integration Sync Middleware (`src/integration-engine`):** FastAPI engine handling bi-directional sync, SQS messaging, DynamoDB indexing, and audit logging.
-- **Web UI Management Dashboard (`src/dashboard-ui`):** Modern UI served via **Vercel CLI** (`vercel dev` on port 3000).
+- **OAuth 2.0 Web Server / Authorization Code Flow:** Full OAuth consent and callback lifecycle (`/api/auth/salesforce/callback`).
+- **AWS Secrets Manager Replication:** Refresh tokens and client secrets are securely stored as encrypted secrets in AWS Secrets Manager, never as plain text in the database.
+- **MySQL Multi-User Token Expiry Engine:** `users` and `salesforce_oauth_tokens` tables track exact expiration timestamps (`expires_at`), enabling each user to connect their own Salesforce Org independently with automatic token refresh on expiry.
+- **Modular Monorepo Structure (`src/`):** Clean separation of backend (`src/integration-engine`), frontend (`src/dashboard-ui`), and scripts (`src/scripts`).
+- **Local AWS Cloud (LocalStack):** S3 (`salesforce-raw-events`, `salesforce-backups`), DynamoDB (`SalesforceSyncRecords`), SQS (`salesforce-inbound-queue`, `salesforce-deadletter-queue`), and Secrets Manager.
+- **Web UI Management Dashboard (Port 3000):** Vercel CLI-powered interface with multi-user switcher, real-time token expiry countdown timer, one-click OAuth login, and Secrets Manager inspector.
 
 ---
 
@@ -17,22 +18,26 @@ A complete local Docker environment replicating an end-to-end integration betwee
 
 ```
 .
-├── src/                          # 📁 All Development Modules
-│   ├── integration-engine/       # FastAPI Middleware Backend
-│   ├── dashboard-ui/             # Vercel CLI Frontend
-│   └── scripts/                  # AWS LocalStack Init Scripts
-├── docs/                         # 📖 Documentation Hub
-│   ├── work-progress.md
-│   ├── discussions-and-decisions.md
-│   ├── architecture.md
-│   └── setup-guide.md
-├── .agents/                      # 🛡️ Always-on Agent Rules & Safeguards
-│   └── rules/mandatory-documentation-safeguard.md
-├── .venv/                        # Local Python Virtual Environment
-├── docker-compose.yml            # Docker Topology Orchestrator
-├── requirements.txt              # Root Python Dependencies
-├── AGENTS.md & GEMINI.md         # Pair-Programming Directives
-├── .env & .env.example           # Live Credentials & Config
+├── src/                                    # 📁 Development Modules
+│   ├── integration-engine/                 # FastAPI Middleware Backend
+│   │   ├── app/
+│   │   │   ├── main.py                     # API Routes & Webhooks
+│   │   │   ├── config.py                   # Environment & Database Config
+│   │   │   ├── database.py                 # MySQL SQLAlchemy Models (users, tokens)
+│   │   │   ├── oauth_service.py            # OAuth 2.0 Auth Code & Token Refresh Engine
+│   │   │   ├── secrets_manager.py          # AWS Secrets Manager Replicator
+│   │   │   ├── salesforce_client.py        # User-Scoped SOQL & REST Client
+│   │   │   ├── aws_client.py               # Boto3 S3 / DynamoDB / SQS
+│   │   │   └── sync_service.py             # Event Sync Pipelines
+│   │   └── Dockerfile
+│   ├── dashboard-ui/                       # Vercel CLI Frontend
+│   │   ├── index.html, app.js, vercel.json, package.json, Dockerfile
+│   └── scripts/                            # Provisioning Scripts (init-mysql.sql, init-aws.sh)
+├── docs/                                   # 📖 Documentation Hub (ADRs, Work Progress)
+├── .agents/                                # 🛡️ Always-on AI Rules & Safeguards
+├── .venv/                                  # Local Python Virtual Environment
+├── docker-compose.yml                      # LocalStack + MySQL + FastAPI + Vercel CLI
+├── .env & .env.example                     # Salesforce OAuth & DB Credentials
 └── README.md
 ```
 
@@ -40,32 +45,22 @@ A complete local Docker environment replicating an end-to-end integration betwee
 
 ## ⚡ Quick Start
 
-### 1. Configure Live Salesforce Credentials
-Edit [.env](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.env):
-```env
-SALESFORCE_AUTH_TYPE=oauth_password
-SALESFORCE_LOGIN_URL=https://login.salesforce.com
-SALESFORCE_USERNAME=your_username@domain.com
-SALESFORCE_PASSWORD=your_password
-SALESFORCE_SECURITY_TOKEN=your_security_token
-SALESFORCE_CLIENT_ID=your_connected_app_consumer_key
-SALESFORCE_CLIENT_SECRET=your_connected_app_consumer_secret
+### 1. Configure Salesforce Connected App Callback URL
+Set the Callback URL in your Salesforce Connected App to:
+```
+http://localhost:8000/api/auth/salesforce/callback
 ```
 
-### 2. Start Containers
+### 2. Configure [.env](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.env)
+```env
+SALESFORCE_CLIENT_ID=your_consumer_key
+SALESFORCE_CLIENT_SECRET=your_consumer_secret
+```
+
+### 3. Start Containers
 ```bash
 docker compose up -d --build
 ```
 
-### 3. Open the Web Dashboard (Vercel CLI)
-Visit **[http://localhost:3000](http://localhost:3000)** in your browser.
-
----
-
-## 🔗 Ports & Endpoints
-
-| Service | Endpoint | Runtime | Description |
-| :--- | :--- | :--- | :--- |
-| **Web UI Dashboard** | [http://localhost:3000](http://localhost:3000) | Vercel CLI | Live visual CRM & AWS explorer |
-| **Integration Engine API** | [http://localhost:8000/docs](http://localhost:8000/docs) | FastAPI | Interactive Swagger API docs |
-| **LocalStack AWS Gateway** | [http://localhost:4566](http://localhost:4566) | LocalStack | Local S3, DynamoDB, and SQS endpoint |
+### 4. Open the Web Dashboard
+Visit **[http://localhost:3000](http://localhost:3000)**, select a user, and click **"Connect Live Salesforce"**!

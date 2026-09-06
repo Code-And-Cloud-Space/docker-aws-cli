@@ -1,36 +1,259 @@
 const API_BASE = "http://localhost:8000";
 
 let currentTab = "salesforce";
+let tokenCountdownInterval = null;
+let isSalesforceConnected = false;
+
+// -----------------------------------------------------------------------------
+// Modern Toast Notification Engine
+// -----------------------------------------------------------------------------
+function showToast(message, type = "info", duration = 4000) {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+
+  const toastId = "toast_" + Math.random().toString(36).substring(2, 9);
+  
+  const typeConfig = {
+    success: {
+      border: "border-emerald-500/40",
+      bg: "bg-slate-900/95",
+      accentBg: "bg-emerald-500/10",
+      iconColor: "text-emerald-400",
+      icon: "fa-solid fa-circle-check",
+      titleColor: "text-emerald-400",
+      title: "Success"
+    },
+    error: {
+      border: "border-red-500/40",
+      bg: "bg-slate-900/95",
+      accentBg: "bg-red-500/10",
+      iconColor: "text-red-400",
+      icon: "fa-solid fa-circle-xmark",
+      titleColor: "text-red-400",
+      title: "Error"
+    },
+    warning: {
+      border: "border-amber-500/40",
+      bg: "bg-slate-900/95",
+      accentBg: "bg-amber-500/10",
+      iconColor: "text-amber-400",
+      icon: "fa-solid fa-triangle-exclamation",
+      titleColor: "text-amber-400",
+      title: "Warning"
+    },
+    info: {
+      border: "border-sky-500/40",
+      bg: "bg-slate-900/95",
+      accentBg: "bg-sky-500/10",
+      iconColor: "text-sky-400",
+      icon: "fa-solid fa-circle-info",
+      titleColor: "text-sky-400",
+      title: "Notification"
+    }
+  };
+
+  const config = typeConfig[type] || typeConfig.info;
+
+  const toast = document.createElement("div");
+  toast.id = toastId;
+  toast.className = `toast-item pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border ${config.border} ${config.bg} backdrop-blur-md shadow-2xl transform translate-x-full opacity-0`;
+  
+  toast.innerHTML = `
+    <div class="p-2 rounded-lg ${config.accentBg} ${config.iconColor} shrink-0 mt-0.5">
+      <i class="${config.icon} text-sm"></i>
+    </div>
+    <div class="flex-1 min-w-0 pr-1">
+      <div class="text-[11px] font-semibold ${config.titleColor} uppercase tracking-wider mb-0.5">${config.title}</div>
+      <div class="text-xs text-slate-200 leading-relaxed break-words">${message}</div>
+    </div>
+    <button onclick="dismissToast('${toastId}')" class="text-slate-400 hover:text-white p-1 -mr-1 -mt-1 rounded transition shrink-0">
+      <i class="fa-solid fa-xmark text-xs"></i>
+    </button>
+  `;
+
+  container.appendChild(toast);
+
+  // Trigger slide-in animation
+  requestAnimationFrame(() => {
+    toast.classList.remove("translate-x-full", "opacity-0");
+    toast.classList.add("translate-x-0", "opacity-100");
+  });
+
+  // Auto dismiss timer
+  if (duration > 0) {
+    setTimeout(() => {
+      dismissToast(toastId);
+    }, duration);
+  }
+}
+
+function dismissToast(toastId) {
+  const toast = document.getElementById(toastId);
+  if (!toast) return;
+  toast.classList.remove("translate-x-0", "opacity-100");
+  toast.classList.add("translate-x-full", "opacity-0");
+  setTimeout(() => {
+    if (toast && toast.parentNode) {
+      toast.parentNode.removeChild(toast);
+    }
+  }, 300);
+}
+
+// Fallback to intercept any unexpected window.alert
+window.alert = function(msg) {
+  showToast(String(msg), "info");
+};
+
+// -----------------------------------------------------------------------------
+// Session ID Management (Per Browser Window / Incognito Isolation)
+// -----------------------------------------------------------------------------
+function getSessionId() {
+  return sessionStorage.getItem("sf_integration_session_id") || "";
+}
+
+function setSessionId(id) {
+  if (id) {
+    sessionStorage.setItem("sf_integration_session_id", id);
+  } else {
+    sessionStorage.removeItem("sf_integration_session_id");
+  }
+}
+
+function ensureSessionId() {
+  let id = getSessionId();
+  if (!id) {
+    id = "sess_" + Math.random().toString(36).substring(2, 12) + "_" + Date.now();
+    setSessionId(id);
+  }
+  return id;
+}
+
+function getAuthHeaders() {
+  const sessId = getSessionId();
+  const headers = { "Content-Type": "application/json" };
+  if (sessId) {
+    headers["X-Session-ID"] = sessId;
+  }
+  return headers;
+}
+
+function renderLockedStateForAllTabs() {
+  const lockedRow = (title, msg) => `
+    <tr>
+      <td colspan="10" class="py-12 text-center text-amber-400 font-medium">
+        <div class="flex flex-col items-center justify-center space-y-2">
+          <i class="fa-solid fa-lock text-3xl text-amber-500"></i>
+          <span class="text-sm font-semibold">${title}</span>
+          <span class="text-xs text-slate-400">${msg || 'Please connect your Live Salesforce account using the "Connect Live Salesforce" button above.'}</span>
+        </div>
+      </td>
+    </tr>
+  `;
+
+  const sfTbody = document.getElementById("sf-table-body");
+  if (sfTbody) sfTbody.innerHTML = lockedRow("Salesforce Connection Required", "Please connect to Salesforce using the button above to view live records.");
+
+  const mysqlTbody = document.getElementById("mysql-table-body");
+  if (mysqlTbody) mysqlTbody.innerHTML = lockedRow("Salesforce Connection Required", "Please connect to Salesforce to view synchronized MySQL database records.");
+
+  const ddbTbody = document.getElementById("dynamodb-table-body");
+  if (ddbTbody) ddbTbody.innerHTML = lockedRow("Salesforce Connection Required", "Please connect to Salesforce to view AWS DynamoDB items.");
+
+  const s3Tbody = document.getElementById("s3-table-body");
+  if (s3Tbody) s3Tbody.innerHTML = lockedRow("Salesforce Connection Required", "Please connect to Salesforce to view AWS S3 event archives.");
+
+  const secretsTbody = document.getElementById("secrets-table-body");
+  if (secretsTbody) secretsTbody.innerHTML = lockedRow("Salesforce Connection Required", "Please connect to Salesforce to view AWS Secrets Manager tokens.");
+
+  const sqsCards = document.getElementById("sqs-cards");
+  if (sqsCards) {
+    sqsCards.innerHTML = `
+      <div class="col-span-2 text-center text-amber-400 py-12 border border-amber-900/40 bg-amber-950/20 rounded-xl space-y-2">
+        <i class="fa-solid fa-lock text-3xl text-amber-500"></i>
+        <p class="text-sm font-semibold">Salesforce Connection Required</p>
+        <p class="text-xs text-slate-400">Please connect to Salesforce using the button above to view AWS SQS message queues.</p>
+      </div>
+    `;
+  }
+
+  const logsContainer = document.getElementById("logs-container");
+  if (logsContainer) {
+    logsContainer.innerHTML = `
+      <div class="text-amber-400 text-center py-12 border border-amber-900/40 bg-amber-950/20 rounded-xl space-y-2">
+        <i class="fa-solid fa-lock text-3xl text-amber-500"></i>
+        <p class="text-sm font-semibold">Salesforce Connection Required</p>
+        <p class="text-xs text-slate-400">Please connect to Salesforce using the button above to view integration audit logs.</p>
+      </div>
+    `;
+  }
+
+  const logCount = document.getElementById("log-count");
+  if (logCount) logCount.textContent = "0";
+}
 
 function switchTab(tabId) {
+  if (tabId === "sync" && !isSalesforceConnected) {
+    tabId = "salesforce";
+  }
   currentTab = tabId;
-  ["salesforce", "dynamodb", "s3", "sqs", "sync", "logs"].forEach(t => {
+  ["salesforce", "mysql", "dynamodb", "s3", "sqs", "secrets", "sync", "logs"].forEach(t => {
     const el = document.getElementById(`tab-${t}`);
     const btn = document.getElementById(`tab-btn-${t}`);
     if (el) el.classList.toggle("hidden", t !== tabId);
     if (btn) btn.classList.toggle("tab-active", t === tabId);
   });
 
+  if (!isSalesforceConnected) {
+    renderLockedStateForAllTabs();
+    return;
+  }
+
   if (tabId === "salesforce") loadSalesforceRecords();
+  if (tabId === "mysql") loadMySQLRecords();
   if (tabId === "dynamodb") loadDynamoDBRecords();
   if (tabId === "s3") loadS3Files();
   if (tabId === "sqs") loadSQSStats();
+  if (tabId === "secrets") loadSecrets();
   if (tabId === "logs") loadLogs();
+}
+
+function handleOAuthParams() {
+  const params = new URLSearchParams(window.location.search);
+  const alertEl = document.getElementById("oauth-alert");
+  const alertText = document.getElementById("oauth-alert-text");
+
+  const urlSessionId = params.get("session_id");
+  if (urlSessionId) {
+    setSessionId(urlSessionId);
+  }
+
+  if (params.get("auth_success") === "true") {
+    alertEl.className = "px-4 py-2.5 text-xs text-center font-medium transition flex items-center justify-between bg-emerald-950/90 text-emerald-300 border-b border-emerald-800";
+    alertText.innerHTML = `<i class="fa-solid fa-circle-check mr-2"></i> Successfully connected to Live Salesforce via OAuth 2.0 Auth Code Flow (PKCE S256)! Tokens secured in Secrets Manager & MySQL.`;
+    alertEl.classList.remove("hidden");
+    showToast("Successfully connected to Live Salesforce via OAuth 2.0 Auth Code Flow (PKCE S256)!", "success", 6000);
+    window.history.replaceState({}, document.title, window.location.pathname);
+  } else if (params.get("auth_error")) {
+    alertEl.className = "px-4 py-2.5 text-xs text-center font-medium transition flex items-center justify-between bg-red-950/90 text-red-300 border-b border-red-800";
+    alertText.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-2"></i> ${params.get("auth_error")}`;
+    alertEl.classList.remove("hidden");
+    showToast(`OAuth Error: ${params.get("auth_error")}`, "error", 6000);
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+}
+
+function dismissAlert() {
+  document.getElementById("oauth-alert").classList.add("hidden");
 }
 
 async function checkHealth() {
   try {
-    const res = await fetch(`${API_BASE}/api/status`);
+    const res = await fetch(`${API_BASE}/api/status`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     
-    // SF Health Badge
-    const sfEl = document.getElementById("sf-health");
-    if (data.salesforce && data.salesforce.status === "connected") {
-      sfEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span><span class="text-emerald-300">Live Salesforce: Connected</span>`;
-    } else {
-      sfEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span><span class="text-amber-300">Live Salesforce: Check Credentials</span>`;
-    }
-
     // AWS Health Badge
     const awsEl = document.getElementById("aws-health");
     if (data.aws && data.aws.status === "connected") {
@@ -39,20 +262,186 @@ async function checkHealth() {
       awsEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-400"></span><span class="text-red-300">AWS: Offline</span>`;
     }
 
+    // Salesforce Session Details & Countdown
+    updateSessionBar(data.salesforce);
+
     // Update log count
-    document.getElementById("log-count").textContent = data.recentLogsCount || 0;
+    const logEl = document.getElementById("log-count");
+    if (logEl) {
+      logEl.textContent = isSalesforceConnected ? (data.recentLogsCount || 0) : 0;
+    }
   } catch (err) {
     console.error("Health check error:", err);
+    updateSessionBar({ status: "disconnected" });
   }
 }
 
+function updateSessionBar(sf) {
+  const statusBadge = document.getElementById("session-status-badge");
+  const detailsGroup = document.getElementById("session-details-group");
+  const btnLogin = document.getElementById("btn-oauth-login");
+  const btnRefresh = document.getElementById("btn-oauth-refresh");
+  const btnDisconnect = document.getElementById("btn-oauth-disconnect");
+  const sfHealthEl = document.getElementById("sf-health");
+  const syncBtn = document.getElementById("tab-btn-sync");
+
+  if (!sf || sf.status === "disconnected") {
+    isSalesforceConnected = false;
+    statusBadge.className = "px-2 py-0.5 rounded text-[11px] bg-slate-800 text-slate-400 border border-slate-700";
+    statusBadge.textContent = "Not Connected";
+    detailsGroup.classList.add("hidden");
+    btnLogin.classList.remove("hidden");
+    btnRefresh.classList.add("hidden");
+    btnDisconnect.classList.add("hidden");
+    sfHealthEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-500"></span><span class="text-slate-400">SF: Not Connected</span>`;
+    clearInterval(tokenCountdownInterval);
+
+    // Hide the Sync Pipeline tab button when not logged in
+    if (syncBtn) syncBtn.classList.add("hidden");
+    if (currentTab === "sync") switchTab("salesforce");
+
+    // Completely clear and lock all data displays across the dashboard
+    renderLockedStateForAllTabs();
+  } else {
+    isSalesforceConnected = true;
+    const isExpired = sf.isExpired;
+    statusBadge.className = isExpired ? "px-2 py-0.5 rounded text-[11px] bg-amber-900/50 text-amber-300 border border-amber-800" : "px-2 py-0.5 rounded text-[11px] bg-emerald-900/50 text-emerald-300 border border-emerald-700";
+    statusBadge.textContent = isExpired ? "Token Expired (Auto-Refreshes)" : "Connected (Live)";
+
+    detailsGroup.classList.remove("hidden");
+    document.getElementById("session-org-id").textContent = sf.salesforceOrgId || "N/A";
+    document.getElementById("session-instance-url").textContent = sf.instanceUrl || "N/A";
+
+    btnLogin.classList.add("hidden");
+    btnRefresh.classList.remove("hidden");
+    btnDisconnect.classList.remove("hidden");
+
+    // Show the Sync Pipeline tab button when logged in
+    if (syncBtn) syncBtn.classList.remove("hidden");
+
+    sfHealthEl.innerHTML = `<span class="w-2 h-2 rounded-full ${isExpired ? 'bg-amber-400' : 'bg-emerald-400'}"></span><span class="${isExpired ? 'text-amber-300' : 'text-emerald-300'}">SF: ${isExpired ? 'Expiring' : 'Active'}</span>`;
+
+    // Start live countdown
+    startCountdown(sf.expiresInSeconds || 0);
+  }
+}
+
+function startCountdown(totalSeconds) {
+  clearInterval(tokenCountdownInterval);
+  let remaining = totalSeconds;
+
+  function renderTime() {
+    const el = document.getElementById("session-countdown");
+    if (!el) return;
+    if (remaining <= 0) {
+      el.textContent = "Expired (Refreshes on next API call)";
+      el.className = "text-amber-400 font-bold";
+      return;
+    }
+    const hours = Math.floor(remaining / 3600);
+    const mins = Math.floor((remaining % 3600) / 60);
+    const secs = remaining % 60;
+    el.textContent = `${hours}h ${mins}m ${secs}s`;
+    el.className = remaining < 300 ? "text-red-400 font-bold animate-pulse" : "text-amber-300 font-semibold";
+  }
+
+  renderTime();
+  tokenCountdownInterval = setInterval(() => {
+    remaining = Math.max(0, remaining - 1);
+    renderTime();
+  }, 1000);
+}
+
+// -----------------------------------------------------------------------------
+// OAuth Actions
+// -----------------------------------------------------------------------------
+async function startSalesforceLogin() {
+  try {
+    const sessId = ensureSessionId();
+    const res = await fetch(`${API_BASE}/api/auth/salesforce/login?session_id=${encodeURIComponent(sessId)}`);
+    const data = await res.json();
+    if (data.authUrl) {
+      window.location.href = data.authUrl;
+    } else {
+      showToast("Failed to generate Salesforce OAuth URL. Please check .env credentials.", "error");
+    }
+  } catch (err) {
+    showToast(`OAuth Login error: ${err.message}`, "error");
+  }
+}
+
+async function forceRefreshToken() {
+  const sessId = getSessionId();
+  if (!sessId) {
+    showToast("Please connect to Salesforce first.", "warning");
+    return;
+  }
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/salesforce/refresh`, {
+      method: "POST",
+      headers: getAuthHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Refresh failed");
+    showToast(`Token Refreshed via AWS Secrets Manager! Instance: ${data.instanceUrl}`, "success");
+    refreshAll();
+  } catch (err) {
+    showToast(`Refresh Failed: ${err.message}`, "error");
+  }
+}
+
+async function disconnectSalesforce() {
+  const sessId = getSessionId();
+  if (!sessId) {
+    showToast("No active session to disconnect.", "warning");
+    return;
+  }
+  if (!confirm("Disconnect active Salesforce account for this session?")) return;
+  try {
+    await fetch(`${API_BASE}/api/auth/salesforce/disconnect`, {
+      method: "POST",
+      headers: getAuthHeaders()
+    });
+    setSessionId(null);
+    isSalesforceConnected = false;
+    showToast("Salesforce session disconnected successfully.", "info");
+    refreshAll();
+  } catch (err) {
+    showToast(`Disconnect error: ${err.message}`, "error");
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Data Explorers
+// -----------------------------------------------------------------------------
 async function loadSalesforceRecords() {
   const sobject = document.getElementById("sf-object-select").value;
   const tbody = document.getElementById("sf-table-body");
-  tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500">Loading ${sobject}s from Live Salesforce...</td></tr>`;
+
+  if (!isSalesforceConnected || !getSessionId()) {
+    tbody.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-amber-400 font-medium"><div class="flex flex-col items-center justify-center space-y-2"><i class="fa-solid fa-lock text-3xl text-amber-500"></i><span class="text-sm font-semibold">Salesforce Connection Required</span><span class="text-xs text-slate-400">Please connect to Salesforce using the "Connect Live Salesforce" button above to view live records.</span></div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500"><i class="fa-solid fa-spinner animate-spin mr-2"></i>Loading ${sobject}s from Live Salesforce...</td></tr>`;
 
   try {
-    const res = await fetch(`${API_BASE}/api/salesforce/records/${sobject}`);
+    const res = await fetch(`${API_BASE}/api/salesforce/records/${sobject}`, {
+      headers: getAuthHeaders()
+    });
+    
+    if (res.status === 401) {
+      isSalesforceConnected = false;
+      renderLockedStateForAllTabs();
+      return;
+    }
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-amber-400 font-medium"><i class="fa-solid fa-lock mr-2"></i>Please connect to Salesforce using the "Connect Live Salesforce" button above. (${errData.detail || "Authentication required"})</td></tr>`;
+      return;
+    }
+
     const data = await res.json();
     const records = data.records || [];
 
@@ -73,24 +462,135 @@ async function loadSalesforceRecords() {
           <td class="py-3 px-4 text-xs text-slate-400">${extra}</td>
           <td class="py-3 px-4 text-xs text-slate-500">${modDate}</td>
           <td class="py-3 px-4 text-right">
-            <button onclick="syncSingleRecord('${sobject}', '${r.Id}')" class="text-xs bg-slate-800 hover:bg-slate-700 text-cyan-400 px-2.5 py-1 rounded border border-slate-700">
-              <i class="fa-solid fa-cloud-arrow-up mr-1"></i> Sync to AWS
+            <button onclick="syncSingleRecord('${sobject}', '${r.Id}')" class="text-xs bg-slate-800 hover:bg-slate-700 text-cyan-400 hover:text-cyan-300 px-2.5 py-1.5 rounded border border-slate-700 transition">
+              <i class="fa-solid fa-cloud-arrow-up mr-1"></i> Sync to AWS & DB
             </button>
           </td>
         </tr>
       `;
     }).join("");
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-red-400">Failed to load records from Live Salesforce: ${err.message}. Please verify .env credentials.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-amber-400 font-medium"><i class="fa-solid fa-lock mr-2"></i>Please connect to Salesforce using the "Connect Live Salesforce" button above. (${err.message})</td></tr>`;
+  }
+}
+
+async function syncSingleRecord(sobject, recordId) {
+  const sessId = getSessionId();
+  if (!isSalesforceConnected || !sessId) {
+    showToast("Please connect to Salesforce first using the Connect Live Salesforce button.", "warning");
+    return;
+  }
+  try {
+    const res = await fetch(`${API_BASE}/api/sync/record`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ sobject, record_id: recordId, session_id: sessId })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "Failed to sync record");
+    }
+    showToast(`Successfully synced ${sobject} (${recordId}) to MySQL, DynamoDB, and S3!`, "success");
+    refreshAll();
+  } catch (err) {
+    showToast(`Sync Error: ${err.message}`, "error");
+  }
+}
+
+async function loadMySQLRecords() {
+  const tableSelect = document.getElementById("mysql-table-select").value;
+  const tbody = document.getElementById("mysql-table-body");
+
+  if (!isSalesforceConnected || !getSessionId()) {
+    tbody.innerHTML = `<tr><td colspan="6" class="py-12 text-center text-amber-400 font-medium"><div class="flex flex-col items-center justify-center space-y-2"><i class="fa-solid fa-lock text-3xl text-amber-500"></i><span class="text-sm font-semibold">Salesforce Connection Required</span><span class="text-xs text-slate-400">Please connect to Salesforce to view synchronized MySQL database records.</span></div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-500"><i class="fa-solid fa-spinner animate-spin mr-2"></i>Loading MySQL records...</td></tr>`;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/db/${tableSelect}`, {
+      headers: getAuthHeaders()
+    });
+
+    if (res.status === 401) {
+      isSalesforceConnected = false;
+      renderLockedStateForAllTabs();
+      return;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-amber-400 font-medium"><i class="fa-solid fa-lock mr-2"></i>Salesforce connection required. (${err.detail || "Authentication required"})</td></tr>`;
+      return;
+    }
+
+    const data = await res.json();
+    const records = data.records || data.accounts || data.contacts || data.opportunities || [];
+
+    if (records.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-500">No records found in MySQL table. Click "Sync to AWS & DB" on any Salesforce record to populate.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = records.map(r => {
+      let name = r.name || `${r.firstName || ''} ${r.lastName || ''}`.trim() || "-";
+      let attrs = "-";
+      if (tableSelect === "accounts") {
+        attrs = `Industry: ${r.industry || '-'} | Type: ${r.type || '-'}`;
+      } else if (tableSelect === "contacts") {
+        attrs = `Email: ${r.email || '-'} | Phone: ${r.phone || '-'}`;
+      } else if (tableSelect === "opportunities") {
+        attrs = `Stage: ${r.stageName || '-'} | Amount: ${r.amount ? '$' + Number(r.amount).toLocaleString() : '-'}`;
+      }
+      const syncStatus = r.syncStatus || "SYNCED";
+      const updatedAt = r.updatedAt ? new Date(r.updatedAt).toLocaleString() : "N/A";
+
+      return `
+        <tr class="hover:bg-slate-800/50 transition">
+          <td class="py-3 px-4 font-mono text-xs text-slate-400">#${r.id}</td>
+          <td class="py-3 px-4 font-mono text-xs text-blue-400">${r.salesforceId}</td>
+          <td class="py-3 px-4 font-medium text-white">${name}</td>
+          <td class="py-3 px-4 text-xs text-slate-300">${attrs}</td>
+          <td class="py-3 px-4">
+            <span class="bg-emerald-900/60 text-emerald-300 text-xs px-2 py-0.5 rounded border border-emerald-700">${syncStatus}</span>
+          </td>
+          <td class="py-3 px-4 text-xs text-slate-500">${updatedAt}</td>
+        </tr>
+      `;
+    }).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-400">Failed to load MySQL records: ${err.message}</td></tr>`;
   }
 }
 
 async function loadDynamoDBRecords() {
   const tbody = document.getElementById("dynamodb-table-body");
-  tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500">Scanning DynamoDB...</td></tr>`;
+
+  if (!isSalesforceConnected || !getSessionId()) {
+    tbody.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-amber-400 font-medium"><div class="flex flex-col items-center justify-center space-y-2"><i class="fa-solid fa-lock text-3xl text-amber-500"></i><span class="text-sm font-semibold">Salesforce Connection Required</span><span class="text-xs text-slate-400">Please connect to Salesforce to view AWS DynamoDB items.</span></div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500"><i class="fa-solid fa-spinner animate-spin mr-2"></i>Scanning DynamoDB...</td></tr>`;
 
   try {
-    const res = await fetch(`${API_BASE}/api/aws/dynamodb/records`);
+    const res = await fetch(`${API_BASE}/api/aws/dynamodb/records`, {
+      headers: getAuthHeaders()
+    });
+
+    if (res.status === 401) {
+      isSalesforceConnected = false;
+      renderLockedStateForAllTabs();
+      return;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-amber-400 font-medium"><i class="fa-solid fa-lock mr-2"></i>Salesforce connection required. (${err.detail || "Authentication required"})</td></tr>`;
+      return;
+    }
+
     const data = await res.json();
     const items = data.records || [];
 
@@ -120,43 +620,176 @@ async function loadDynamoDBRecords() {
   }
 }
 
+let currentS3File = null;
+
 async function loadS3Files() {
   const tbody = document.getElementById("s3-table-body");
-  tbody.innerHTML = `<tr><td colspan="3" class="py-8 text-center text-slate-500">Listing S3 objects...</td></tr>`;
+
+  if (!isSalesforceConnected || !getSessionId()) {
+    tbody.innerHTML = `<tr><td colspan="4" class="py-12 text-center text-amber-400 font-medium"><div class="flex flex-col items-center justify-center space-y-2"><i class="fa-solid fa-lock text-3xl text-amber-500"></i><span class="text-sm font-semibold">Salesforce Connection Required</span><span class="text-xs text-slate-400">Please connect to Salesforce to view AWS S3 event archives.</span></div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-slate-500"><i class="fa-solid fa-spinner animate-spin mr-2"></i>Listing S3 objects...</td></tr>`;
 
   try {
-    const res = await fetch(`${API_BASE}/api/aws/s3/files`);
+    const res = await fetch(`${API_BASE}/api/aws/s3/files`, {
+      headers: getAuthHeaders()
+    });
+
+    if (res.status === 401) {
+      isSalesforceConnected = false;
+      renderLockedStateForAllTabs();
+      return;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-amber-400 font-medium"><i class="fa-solid fa-lock mr-2"></i>Salesforce connection required. (${err.detail || "Authentication required"})</td></tr>`;
+      return;
+    }
+
     const data = await res.json();
     const files = data.files || [];
 
     if (files.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="3" class="py-8 text-center text-slate-500">No objects found in S3 bucket.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-slate-500">No objects found in S3 bucket. Click "Sync to AWS & DB" on any Salesforce record to archive events.</td></tr>`;
       return;
     }
 
+    const bucketName = data.bucket || "salesforce-raw-events";
     tbody.innerHTML = files.map(f => {
       return `
         <tr class="hover:bg-slate-800/50 transition">
           <td class="py-3 px-4 font-mono text-xs text-emerald-400 flex items-center space-x-2">
             <i class="fa-solid fa-file-code text-slate-500"></i>
-            <span>${f.key}</span>
+            <span class="hover:underline cursor-pointer font-medium" onclick="viewS3File('${f.key}', '${bucketName}')">${f.key}</span>
           </td>
           <td class="py-3 px-4 text-xs text-slate-400">${f.size} bytes</td>
           <td class="py-3 px-4 text-xs text-slate-500">${new Date(f.lastModified).toLocaleString()}</td>
+          <td class="py-3 px-4 text-right">
+            <button onclick="viewS3File('${f.key}', '${bucketName}')" class="text-xs bg-emerald-950 hover:bg-emerald-900 text-emerald-400 hover:text-emerald-300 border border-emerald-800/80 px-2.5 py-1.5 rounded transition inline-flex items-center space-x-1.5 shadow-sm">
+              <i class="fa-solid fa-eye"></i>
+              <span>View Content</span>
+            </button>
+          </td>
         </tr>
       `;
     }).join("");
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="3" class="py-8 text-center text-red-400">Failed to load S3 objects: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-red-400">Failed to load S3 objects: ${err.message}</td></tr>`;
   }
+}
+
+async function viewS3File(key, bucket = "salesforce-raw-events") {
+  if (!isSalesforceConnected || !getSessionId()) {
+    showToast("Please connect to Salesforce first.", "warning");
+    return;
+  }
+
+  const modal = document.getElementById("s3-viewer-modal");
+  const titleEl = document.getElementById("s3-modal-title");
+  const bucketEl = document.getElementById("s3-modal-bucket");
+  const sizeEl = document.getElementById("s3-modal-size");
+  const modEl = document.getElementById("s3-modal-modified");
+  const contentEl = document.getElementById("s3-modal-content");
+
+  titleEl.textContent = `s3://${bucket}/${key}`;
+  bucketEl.textContent = bucket;
+  sizeEl.textContent = "Loading...";
+  modEl.textContent = "Loading...";
+  contentEl.textContent = "Fetching file content from AWS S3...";
+
+  modal.classList.remove("hidden");
+
+  try {
+    const res = await fetch(`${API_BASE}/api/aws/s3/file?key=${encodeURIComponent(key)}&bucket=${encodeURIComponent(bucket)}`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to load S3 file");
+    }
+    const data = await res.json();
+    currentS3File = data;
+
+    sizeEl.textContent = `${data.size} bytes`;
+    modEl.textContent = data.lastModified ? new Date(data.lastModified).toLocaleString() : "N/A";
+
+    const displayContent = data.parsedContent ? JSON.stringify(data.parsedContent, null, 2) : (data.rawContent || "Empty file");
+    contentEl.textContent = displayContent;
+  } catch (err) {
+    contentEl.textContent = `Error loading S3 file: ${err.message}`;
+  }
+}
+
+function closeS3ViewerModal() {
+  document.getElementById("s3-viewer-modal").classList.add("hidden");
+  currentS3File = null;
+}
+
+function copyS3Content() {
+  if (!currentS3File) return;
+  const content = currentS3File.parsedContent ? JSON.stringify(currentS3File.parsedContent, null, 2) : (currentS3File.rawContent || "");
+  navigator.clipboard.writeText(content).then(() => {
+    const textEl = document.getElementById("copy-btn-text");
+    const orig = textEl.textContent;
+    textEl.textContent = "Copied!";
+    showToast("File content copied to clipboard!", "success", 2500);
+    setTimeout(() => { textEl.textContent = orig; }, 2000);
+  }).catch(() => {
+    showToast("Failed to copy to clipboard", "error");
+  });
+}
+
+function downloadS3Content() {
+  if (!currentS3File) return;
+  const content = currentS3File.parsedContent ? JSON.stringify(currentS3File.parsedContent, null, 2) : (currentS3File.rawContent || "");
+  const blob = new Blob([content], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const fileName = currentS3File.key.split("/").pop() || "s3-event.json";
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 async function loadSQSStats() {
   const container = document.getElementById("sqs-cards");
-  container.innerHTML = `<div class="col-span-2 text-center text-slate-500 py-8">Loading SQS stats...</div>`;
+
+  if (!isSalesforceConnected || !getSessionId()) {
+    container.innerHTML = `
+      <div class="col-span-2 text-center text-amber-400 py-12 border border-amber-900/40 bg-amber-950/20 rounded-xl space-y-2">
+        <i class="fa-solid fa-lock text-3xl text-amber-500"></i>
+        <p class="text-sm font-semibold">Salesforce Connection Required</p>
+        <p class="text-xs text-slate-400">Please connect to Salesforce to view AWS SQS message queues.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `<div class="col-span-2 text-center text-slate-500 py-8"><i class="fa-solid fa-spinner animate-spin mr-2"></i>Loading SQS stats...</div>`;
 
   try {
-    const res = await fetch(`${API_BASE}/api/aws/sqs/stats`);
+    const res = await fetch(`${API_BASE}/api/aws/sqs/stats`, {
+      headers: getAuthHeaders()
+    });
+
+    if (res.status === 401) {
+      isSalesforceConnected = false;
+      renderLockedStateForAllTabs();
+      return;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      container.innerHTML = `<div class="col-span-2 text-center text-amber-400 py-8"><i class="fa-solid fa-lock mr-2"></i>Salesforce connection required. (${err.detail || "Authentication required"})</div>`;
+      return;
+    }
+
     const stats = await res.json();
 
     container.innerHTML = Object.entries(stats).map(([qName, qData]) => {
@@ -190,10 +823,90 @@ async function loadSQSStats() {
   }
 }
 
+async function loadSecrets() {
+  const tbody = document.getElementById("secrets-table-body");
+
+  if (!isSalesforceConnected || !getSessionId()) {
+    tbody.innerHTML = `<tr><td colspan="4" class="py-12 text-center text-amber-400 font-medium"><div class="flex flex-col items-center justify-center space-y-2"><i class="fa-solid fa-lock text-3xl text-amber-500"></i><span class="text-sm font-semibold">Salesforce Connection Required</span><span class="text-xs text-slate-400">Please connect to Salesforce to view AWS Secrets Manager tokens.</span></div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-slate-500"><i class="fa-solid fa-spinner animate-spin mr-2"></i>Querying AWS Secrets Manager...</td></tr>`;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/secrets`, {
+      headers: getAuthHeaders()
+    });
+
+    if (res.status === 401) {
+      isSalesforceConnected = false;
+      renderLockedStateForAllTabs();
+      return;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-amber-400 font-medium"><i class="fa-solid fa-lock mr-2"></i>Salesforce connection required. (${err.detail || "Authentication required"})</td></tr>`;
+      return;
+    }
+
+    const data = await res.json();
+    const secrets = data.secrets || [];
+
+    if (secrets.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-slate-500">No secrets found in Secrets Manager yet. Connect Salesforce via OAuth to store refresh tokens!</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = secrets.map(s => {
+      return `
+        <tr class="hover:bg-slate-800/50 transition font-mono text-xs">
+          <td class="py-3 px-4 text-yellow-400 font-semibold flex items-center space-x-2">
+            <i class="fa-solid fa-key text-slate-500"></i>
+            <span>${s.name}</span>
+          </td>
+          <td class="py-3 px-4 text-slate-400 truncate max-w-xs">${s.arn || '-'}</td>
+          <td class="py-3 px-4 text-slate-300 font-sans text-xs">${s.description || '-'}</td>
+          <td class="py-3 px-4 text-slate-500 font-sans text-xs">${s.lastChangedDate ? new Date(s.lastChangedDate).toLocaleString() : '-'}</td>
+        </tr>
+      `;
+    }).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-red-400">Failed to load Secrets: ${err.message}</td></tr>`;
+  }
+}
+
 async function loadLogs() {
   const container = document.getElementById("logs-container");
+
+  if (!isSalesforceConnected || !getSessionId()) {
+    container.innerHTML = `
+      <div class="text-amber-400 text-center py-12 border border-amber-900/40 bg-amber-950/20 rounded-xl space-y-2">
+        <i class="fa-solid fa-lock text-3xl text-amber-500"></i>
+        <p class="text-sm font-semibold">Salesforce Connection Required</p>
+        <p class="text-xs text-slate-400">Please connect to Salesforce to view integration audit logs.</p>
+      </div>
+    `;
+    return;
+  }
+
   try {
-    const res = await fetch(`${API_BASE}/api/logs`);
+    const res = await fetch(`${API_BASE}/api/logs`, {
+      headers: getAuthHeaders()
+    });
+
+    if (res.status === 401) {
+      isSalesforceConnected = false;
+      renderLockedStateForAllTabs();
+      return;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      container.innerHTML = `<div class="text-amber-400 text-center py-8"><i class="fa-solid fa-lock mr-2"></i>Salesforce connection required. (${err.detail || "Authentication required"})</div>`;
+      return;
+    }
+
     const data = await res.json();
     const logs = data.logs || [];
 
@@ -225,17 +938,26 @@ async function loadLogs() {
 }
 
 async function triggerFullSync() {
+  const sessId = getSessionId();
+  if (!isSalesforceConnected || !sessId) {
+    showToast("Please connect to Salesforce first using the Connect Live Salesforce button.", "warning");
+    return;
+  }
   const btn = document.getElementById("btn-full-sync");
   btn.disabled = true;
   btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i><span>Syncing in Progress...</span>`;
 
   try {
-    const res = await fetch(`${API_BASE}/api/sync/salesforce-to-aws`, { method: "POST" });
+    const res = await fetch(`${API_BASE}/api/sync/salesforce-to-aws`, {
+      method: "POST",
+      headers: getAuthHeaders()
+    });
     const data = await res.json();
-    alert(`Sync Completed! Synced ${data.summary.synced_count} records from Live Salesforce to DynamoDB and S3.`);
+    if (!res.ok) throw new Error(data.detail || "Full sync failed");
+    showToast(`Sync Completed! Synced ${data.summary.synced_count} records to MySQL, DynamoDB, and S3.`, "success");
     refreshAll();
   } catch (err) {
-    alert(`Sync Failed: ${err.message}`);
+    showToast(`Sync Failed: ${err.message}`, "error");
   } finally {
     btn.disabled = false;
     btn.innerHTML = `<i class="fa-solid fa-play"></i><span>Execute Full Sync Pipeline</span>`;
@@ -243,18 +965,23 @@ async function triggerFullSync() {
 }
 
 async function triggerAwsToSf() {
+  const sessId = getSessionId();
+  if (!isSalesforceConnected || !sessId) {
+    showToast("Please connect to Salesforce first using the Connect Live Salesforce button.", "warning");
+    return;
+  }
   const name = document.getElementById("aws-to-sf-name").value;
   const industry = document.getElementById("aws-to-sf-industry").value;
 
   if (!name) {
-    alert("Please enter an Account Name");
+    showToast("Please enter an Account Name", "warning");
     return;
   }
 
   try {
     const res = await fetch(`${API_BASE}/api/sync/aws-to-salesforce`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         sobject: "Account",
         data: {
@@ -265,16 +992,22 @@ async function triggerAwsToSf() {
       })
     });
     const data = await res.json();
-    alert(`Record pushed to Live Salesforce! ID: ${data.result.recordId}`);
+    if (!res.ok) throw new Error(data.detail || "Push to Salesforce failed");
+    showToast(`Record pushed to Live Salesforce! ID: ${data.result.recordId}`, "success");
     document.getElementById("aws-to-sf-name").value = "";
     document.getElementById("aws-to-sf-industry").value = "";
     refreshAll();
   } catch (err) {
-    alert(`Failed to push to Salesforce: ${err.message}`);
+    showToast(`Failed to push to Salesforce: ${err.message}`, "error");
   }
 }
 
 function openCreateModal() {
+  const sessId = getSessionId();
+  if (!isSalesforceConnected || !sessId) {
+    showToast("Please connect to Salesforce first using the Connect Live Salesforce button.", "warning");
+    return;
+  }
   document.getElementById("create-modal").classList.remove("hidden");
 }
 
@@ -283,12 +1016,17 @@ function closeCreateModal() {
 }
 
 async function submitCreateRecord() {
+  const sessId = getSessionId();
+  if (!isSalesforceConnected || !sessId) {
+    showToast("Please connect to Salesforce first using the Connect Live Salesforce button.", "warning");
+    return;
+  }
   const sobject = document.getElementById("modal-sobject").value;
   const name = document.getElementById("modal-name").value;
   const extra = document.getElementById("modal-extra").value;
 
   if (!name) {
-    alert("Please enter a Name");
+    showToast("Please enter a Name", "warning");
     return;
   }
 
@@ -308,30 +1046,38 @@ async function submitCreateRecord() {
   try {
     const res = await fetch(`${API_BASE}/api/salesforce/records/${sobject}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify(payload)
     });
     const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Create record failed");
     closeCreateModal();
-    alert(`Record created in Live Salesforce (ID: ${data.id}) and synced to AWS!`);
+    showToast(`Record created in Live Salesforce (ID: ${data.id}) and synced to AWS & MySQL!`, "success");
     refreshAll();
   } catch (err) {
-    alert(`Error creating record: ${err.message}`);
+    showToast(`Error creating record: ${err.message}`, "error");
   }
 }
 
-function refreshAll() {
-  checkHealth();
+async function refreshAll() {
+  await checkHealth();
+  if (!isSalesforceConnected) {
+    renderLockedStateForAllTabs();
+    return;
+  }
   if (currentTab === "salesforce") loadSalesforceRecords();
+  if (currentTab === "mysql") loadMySQLRecords();
   if (currentTab === "dynamodb") loadDynamoDBRecords();
   if (currentTab === "s3") loadS3Files();
   if (currentTab === "sqs") loadSQSStats();
+  if (currentTab === "secrets") loadSecrets();
   if (currentTab === "logs") loadLogs();
 }
 
 // Initial Boot
-window.addEventListener("DOMContentLoaded", () => {
-  checkHealth();
-  loadSalesforceRecords();
-  setInterval(checkHealth, 10000);
+window.addEventListener("DOMContentLoaded", async () => {
+  renderLockedStateForAllTabs();
+  handleOAuthParams();
+  await refreshAll();
+  setInterval(checkHealth, 15000);
 });

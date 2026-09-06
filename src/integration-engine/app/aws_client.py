@@ -81,14 +81,45 @@ class LocalAWSManager:
         except Exception as e:
             return []
 
+    def get_s3_file_content(self, key: str, bucket: str = config.S3_RAW_EVENTS_BUCKET) -> Dict[str, Any]:
+        """Fetches and parses the raw text/JSON content of an S3 object"""
+        try:
+            resp = self.s3.get_object(Bucket=bucket, Key=key)
+            raw_body = resp["Body"].read().decode("utf-8")
+            parsed_data = None
+            try:
+                parsed_data = json.loads(raw_body)
+            except Exception:
+                parsed_data = None
+
+            return {
+                "key": key,
+                "bucket": bucket,
+                "contentType": resp.get("ContentType", "application/json"),
+                "size": resp.get("ContentLength", len(raw_body)),
+                "lastModified": resp.get("LastModified").isoformat() if resp.get("LastModified") else None,
+                "rawContent": raw_body,
+                "parsedContent": parsed_data
+            }
+        except Exception as e:
+            raise Exception(f"Failed to fetch S3 object '{key}' from bucket '{bucket}': {str(e)}")
+
     # DynamoDB Helpers
-    def upsert_sync_record(self, sobject_type: str, salesforce_id: str, payload: Dict[str, Any], sync_status: str = "SYNCED"):
+    def upsert_sync_record(
+        self,
+        sobject_type: str,
+        salesforce_id: Optional[str] = None,
+        payload: Dict[str, Any] = None,
+        sync_status: str = "SYNCED",
+        salesforceId: Optional[str] = None
+    ):
+        sf_id = salesforce_id or salesforceId or ""
         table = self.dynamodb.Table(config.DYNAMODB_TABLE_NAME)
         item = {
             "sObjectType": sobject_type,
-            "salesforceId": salesforce_id,
+            "salesforceId": sf_id,
             "awsSyncStatus": sync_status,
-            "payload": json.dumps(payload),
+            "payload": json.dumps(payload or {}),
             "syncedAt": datetime.now(timezone.utc).isoformat()
         }
         table.put_item(Item=item)
