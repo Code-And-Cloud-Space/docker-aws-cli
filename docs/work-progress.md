@@ -75,10 +75,40 @@ This document tracks all work items, development milestones, current status, and
 | | - Implemented `POST /api/db/add-column` with SQL sanitization & data type validation (`ALTER TABLE ADD COLUMN`) | 🟢 Complete | 2026-09-06 |
 | | - Integrated MySQL column dropdowns with sObject schema mapping and intelligent snake_case matching | 🟢 Complete | 2026-09-06 |
 | | - Added interactive "Add Column to MySQL Table" modal with live SQL name preview & auto-mapping | 🟢 Complete | 2026-09-06 |
+| **Phase 14** | **Salesforce DX (`force-app`) Source Structure Setup** | 🟢 Complete | 2026-10-14 |
+| | - Generated standard Salesforce DX directory structure under [`force-app/main/default`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/force-app/main/default) | 🟢 Complete | 2026-10-14 |
+| | - Added project manifest [`manifest/package.xml`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/manifest/package.xml) (API v67.0) | 🟢 Complete | 2026-10-14 |
+| | - Configured [`sfdx-project.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/sfdx-project.json) and [`.forceignore`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.forceignore) | 🟢 Complete | 2026-10-14 |
+| | - Configured scratch org definition [`config/project-scratch-def.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/config/project-scratch-def.json) and script templates | 🟢 Complete | 2026-10-14 |
 
 ---
 
 ## 📝 Activity Log
+
+### 2026-10-14
+- **Initialized Standard Salesforce DX (`force-app`) Structure & Tooling Suite:**
+  - Scaffolding created for Salesforce DX source-format directory structure under `force-app/main/default/`:
+    - `classes`, `triggers`, `lwc`, `aura`, `objects`, `permissionsets`, `tabs`, `flexipages`, `layouts`, `applications`, `staticresources`, `contentassets`.
+  - Removed placeholder `.gitkeep` files from `force-app/` per user request, keeping metadata folders clean for incoming Salesforce components.
+  - Added full Salesforce DX developer tooling configuration files from template:
+    - Code quality & formatting: [`eslint.config.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/eslint.config.js), [`jest.config.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/jest.config.js), [`.prettierrc`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.prettierrc), [`.prettierignore`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.prettierignore), [`package.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/package.json), and [`.husky/`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.husky/).
+    - VS Code configurations: [`.vscode/extensions.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.vscode/extensions.json), [`.vscode/launch.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.vscode/launch.json), and updated [`.vscode/settings.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.vscode/settings.json).
+  - Added project descriptor [`sfdx-project.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/sfdx-project.json) set to `packageDirectories: [{"path": "force-app", "default": true}]` with `sourceApiVersion: "67.0"`.
+  - Added metadata manifest [`manifest/package.xml`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/manifest/package.xml) covering Apex classes, triggers, Aura, LWC, and static resources.
+  - Added scratch org definition [`config/project-scratch-def.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/config/project-scratch-def.json).
+  - Added [`.forceignore`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.forceignore) and updated root [`.gitignore`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.gitignore) to exclude `.sf/` and `.sfdx/` CLI cache.
+  - Added sample SOQL and Apex execution scripts under [`scripts/salesforce/`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/).
+
+### 2026-10-07
+- **Investigated Salesforce Authorization URL & External Client App `EC_` Error Resolution:**
+  - Inspected OAuth 2.0 PKCE authorization URL generation in [`src/integration-engine/app/oauth_service.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/oauth_service.py) (`get_authorization_url`) and endpoint `GET /api/auth/salesforce/login`.
+  - Diagnosed root causes for Salesforce error `EC_ is not found in the organisation` (Salesforce External Client App domain mismatch, developer name vs consumer key mixup, packaged vs local distribution state).
+  - Updated [`docs/setup-guide.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/setup-guide.md) with troubleshooting guide for External Client App setup.
+  - Recorded findings in [`docs/discussions-and-decisions.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/discussions-and-decisions.md).
+- **Inspected Salesforce Org Domain URLs Across Local Environments:**
+  - Checked currently active container environment variables and `.env` (`SALESFORCE_LOGIN_URL=https://login.salesforce.com`).
+  - Enumerated local Salesforce CLI authenticated org profiles from `~/.sfdx/` to identify potential target sandbox and developer org instance URLs.
+
 
 - **Removed Inline `+` Button from Mapping Rows & Streamlined Dropdown Layout:**
   - Removed the inline `+` icon button next to mapping dropdowns in [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) to eliminate visual clipping and horizontal overflow.

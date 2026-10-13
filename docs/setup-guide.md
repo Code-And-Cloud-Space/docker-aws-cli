@@ -190,6 +190,32 @@ docker compose exec aws-cli aws --endpoint-url=http://localstack:4566 dynamodb s
 
 ## 🔧 Troubleshooting Guide
 
+
+### Issue: `OAUTH_EC_APP_NOT_FOUND` ("External client app is not installed in this org")
+
+#### Why this happens:
+1. **Logged into the Wrong Salesforce Org / Account**: Your browser logged in with a Salesforce user/organization different from the one where the External Client App was created (e.g. Trailhead Playground A vs Playground B, or personal org vs work org). Unlike legacy Connected Apps, an External Client App created in Org A is not accessible in Org B unless installed as a managed package.
+2. **Login URL / Org Domain Mismatch (`SALESFORCE_LOGIN_URL`)**: `SALESFORCE_LOGIN_URL` is set to `https://login.salesforce.com` (Production), but your app was created in a **Sandbox** (requires `https://test.salesforce.com`) or custom **My Domain** (e.g. `https://yourcompany.my.salesforce.com`). When hitting the login URL, Salesforce searches the wrong org ecosystem.
+3. **Distribution State set to "Packaged" instead of "Local"**: In Salesforce Setup -> **External Client App Manager**, if the Distribution State is `Packaged`, Salesforce requires it to be deployed and installed via package. In the local developer org, it must be `Local`.
+4. **App Not Authorized / Policies Restricted**: In **Manage External Client Apps**, under **OAuth Policies**, "Permitted Users" is restricted to "Admin approved users are pre-authorized" and your user profile or permission set has not been granted access.
+5. **Propagation Delay**: Salesforce takes up to 5–10 minutes to replicate External Client App OAuth metadata after creation or updates.
+
+#### How to resolve:
+1. **Ensure You Log In to the Exact Org Where the App Was Created**:
+   - Log out of all Salesforce accounts in your browser (or use an Incognito / Private window).
+   - Verify the login email belongs specifically to the Salesforce Org where you set up the External Client App.
+2. **Match Login Domain in `.env`**:
+   - If using a Sandbox: set `SALESFORCE_LOGIN_URL=https://test.salesforce.com`
+   - If using a My Domain URL: set `SALESFORCE_LOGIN_URL=https://<your-domain>.my.salesforce.com`
+3. **Verify App Distribution State**:
+   - Go to **Setup** -> **Apps** -> **External Client Apps** -> **External Client App Manager**.
+   - Find your app -> Ensure **Distribution State** is **Local**.
+4. **Check OAuth Policies**:
+   - In Setup, search **Manage External Client Apps** -> Select your app -> **Edit Policies**.
+   - Under **OAuth Policies**, set **Permitted Users** to *"All users may self-authorize"*.
+5. **Verify the Consumer Key**:
+   - In **External Client App Manager** -> **OAuth Settings** -> **Consumer Details**, copy the **Consumer Key** and verify it matches `SALESFORCE_CLIENT_ID` in `.env`.
+
 ### Issue: "Refresh Failed: No refresh token found in Secrets Manager. Please re-authenticate."
 
 #### Why this happens:
@@ -206,4 +232,39 @@ docker compose exec aws-cli aws --endpoint-url=http://localstack:4566 dynamodb s
    - Under **Selected OAuth Scopes**, ensure **"Perform requests at any time (refresh_token, offline_access)"** and **"Manage user data via APIs (api)"** are selected.
    - Under **OAuth Policies**, ensure the **Refresh Token Policy** is set to *"Refresh token is valid until revoked"*.
 
+---
+
+## ⚡ Salesforce CLI (`sf` / `sfdx`) Operations Runbook
+
+The repository is configured with a standard Salesforce DX source structure (`force-app`) and [`sfdx-project.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/sfdx-project.json).
+
+### 1. Authorize an Org
+```bash
+# Authorize Developer Edition or Production Org
+sf org login web --set-default --alias my-dev-org
+
+# Authorize Sandbox Org
+sf org login web --instance-url https://test.salesforce.com --alias my-sandbox-org
+```
+
+### 2. Deploy & Retrieve Source (`force-app`)
+```bash
+# Deploy all source from force-app to default org
+sf project deploy start --source-dir force-app
+
+# Retrieve source from org into force-app using manifest
+sf project retrieve start --manifest manifest/package.xml
+
+# Retrieve specific metadata (e.g. ApexClass)
+sf project retrieve start --metadata ApexClass:AccountController
+```
+
+### 3. Run Ad-Hoc Scripts
+```bash
+# Execute anonymous Apex
+sf apex run --file scripts/salesforce/apex/hello.apex
+
+# Execute SOQL query against connected org
+sf data query --file scripts/salesforce/soql/account.soql
+```
 

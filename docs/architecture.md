@@ -221,3 +221,36 @@ All data inspection and synchronization routes are wrapped with the `require_aut
                 │                                                    │
 ```
 
+---
+
+## 📦 Salesforce DX Repository Structure (`force-app`)
+
+```
+.
+├── force-app/                  # Salesforce DX source format root
+│   └── main/
+│       └── default/
+│           ├── applications/   # Custom & standard application definitions
+│           ├── aura/           # Aura components
+│           ├── classes/        # Apex classes & controllers
+│           ├── contentassets/  # Salesforce files & asset files
+│           ├── flexipages/     # Lightning App & Record pages
+│           ├── layouts/        # Page layouts
+│           ├── lwc/            # Lightning Web Components
+│           ├── objects/        # Custom Objects, fields & validation rules
+│           ├── permissionsets/ # Permission sets
+│           ├── staticresources/# Static resources (CSS, JS bundles, images)
+│           ├── tabs/           # Custom tabs
+│           └── triggers/       # Apex database triggers
+├── config/
+│   └── project-scratch-def.json # Scratch org configuration
+├── manifest/
+│   └── package.xml             # Metadata API deployment manifest
+├── scripts/
+│   └── salesforce/
+│       ├── apex/hello.apex     # Anonymous Apex execution scripts
+│       └── soql/account.soql   # Ad-hoc SOQL queries
+├── sfdx-project.json           # Salesforce DX project definition & sourceApiVersion
+└── .forceignore                # Salesforce metadata deployment exclusion rules
+```
+

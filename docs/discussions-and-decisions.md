@@ -143,6 +143,19 @@ This document captures discussion notes, design requirements, and Architectural 
 
 ---
 
+### ADR-018: Standard Salesforce DX (`force-app`) Source-Format Repository Structure
+- **Date:** 2026-10-14
+- **Status:** Accepted
+- **Context:** User requested setting up a `force-app` folder and standard Salesforce project structure in the repository to enable Salesforce CLI (`sf` / `sfdx`) source-tracking, metadata deployments, and Apex/LWC development alongside the Docker integration engine.
+- **Decision:**
+  1. Scaffold standard Salesforce DX package directory at `force-app/main/default/` containing standard metadata categories (`classes`, `triggers`, `lwc`, `aura`, `objects`, `permissionsets`, `tabs`, `flexipages`, `layouts`, `applications`, `staticresources`, `contentassets`).
+  2. Maintain DX project configuration [`sfdx-project.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/sfdx-project.json) pointing to `force-app` as the default package directory with API version `67.0`.
+  3. Include standard metadata manifest [`manifest/package.xml`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/manifest/package.xml) and scratch org template [`config/project-scratch-def.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/config/project-scratch-def.json).
+  4. Configure [`.forceignore`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.forceignore) and add Salesforce CLI internal tracking folders (`.sf/`, `.sfdx/`) to [`.gitignore`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.gitignore).
+  5. House interactive Salesforce scripts under [`scripts/salesforce/`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/) (`apex/hello.apex`, `soql/account.soql`).
+
+---
+
 ## 💬 Discussion Notes Log
 
 ### Session 1-18: Foundational Architecture & Multi-Target Sync
@@ -277,3 +290,45 @@ This document captures discussion notes, design requirements, and Architectural 
   - Removed the inline `+` button next to the dropdown in [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) to prevent horizontal layout squishing and hidden elements.
   - Widened the dropdown selector (`w-72 sm:w-80 md:w-96`) and streamlined row alignments so all labels, badges, and options are visible with zero clipping.
   - Database column addition remains accessible directly within the dropdown options via `➕ + Add New Field to MySQL...`.
+
+---
+
+### Session 37: Salesforce Authorization URL Investigation & External Client App `OAUTH_EC_APP_NOT_FOUND` Resolution
+- **User Requirement:** User encountered `auth_error=Salesforce OAuth Error: OAUTH_EC_APP_NOT_FOUND - External client app is not installed in this org`.
+- **Analysis & Discussion Notes:**
+  1. **Authorization URL Architecture:**
+     - The backend generates the OAuth 2.0 PKCE authorization URL via `GET /api/auth/salesforce/login` implemented in [`src/integration-engine/app/oauth_service.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/oauth_service.py) (`get_authorization_url`).
+     - Constructed using parameters from [`.env`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.env): `SALESFORCE_LOGIN_URL`, `SALESFORCE_CLIENT_ID`, `SALESFORCE_REDIRECT_URI`, `SALESFORCE_SCOPES` with RFC 7636 PKCE S256 `code_challenge`.
+  2. **Root Cause of `OAUTH_EC_APP_NOT_FOUND - External client app is not installed in this org`:**
+     - In modern Salesforce, **External Client Apps (ECA)** are designated with `EC_` prefixes.
+     - Unlike legacy Connected Apps with global OAuth directory lookup, an External Client App must exist within the target org where the user logs in.
+     - **Logged Into Wrong Org:** If the browser was logged into a different Salesforce account/org, that org does not have the External Client App installed.
+     - **Domain Mismatch:** `SALESFORCE_LOGIN_URL` defaults to `https://login.salesforce.com`. If the app is in a **Sandbox** or org with a custom **My Domain**, authenticating via production fails.
+     - **Distribution State:** App configured as `Packaged` instead of `Local` in Salesforce External Client App Manager.
+     - **Policy Configuration:** Needs "All users may self-authorize" under Manage External Client Apps.
+
+---
+
+### Session 38: Org Domain URL Inspection & Environment Resolution
+- **User Requirement:** "can you check org domain url"
+- **Findings:**
+  - In [`.env`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.env), `SALESFORCE_LOGIN_URL` is set to `https://login.salesforce.com`.
+  - Discovered local Salesforce CLI configurations in `~/.sfdx/` with authenticated orgs and their specific My Domain URLs (Developer Editions, Sandboxes using `https://test.salesforce.com/`, and custom My Domains).
+  - Highlighted the need to match `SALESFORCE_LOGIN_URL` in `.env` to the specific org where the External Client App was created.
+
+---
+
+### Session 39: Initialized Salesforce DX (`force-app`) Structure & Tooling
+- **User Requirement:** "setup a folder force-app and salesforce structure here" and clarification on `.gitkeep` & template tooling files.
+- **Implementation & Resolution:**
+  - Established canonical Salesforce DX project structure in the repository root alongside the Docker and Python integration services.
+  - Initialized `force-app/main/default/` with core metadata folders (`classes`, `triggers`, `lwc`, `aura`, `objects`, `permissionsets`, `tabs`, `flexipages`, `layouts`, `applications`, `staticresources`, `contentassets`).
+  - Removed all `.gitkeep` files from `force-app/` to ensure no non-metadata placeholder files exist within Salesforce source tracking folders.
+  - Brought in the complete suite of standard Salesforce DX template developer tooling and configuration files:
+    - Code quality & testing: [`eslint.config.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/eslint.config.js), [`jest.config.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/jest.config.js), [`.prettierrc`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.prettierrc), [`.prettierignore`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.prettierignore), [`package.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/package.json), and [`.husky/`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.husky/).
+    - IDE configs: [`.vscode/extensions.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.vscode/extensions.json), [`.vscode/launch.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.vscode/launch.json), and merged `search.exclude` into [`.vscode/settings.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.vscode/settings.json).
+  - Added [`sfdx-project.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/sfdx-project.json) configured for API version 67.0.
+  - Added metadata deployment manifest [`manifest/package.xml`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/manifest/package.xml).
+  - Added scratch org definition [`config/project-scratch-def.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/config/project-scratch-def.json).
+  - Configured [`.forceignore`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.forceignore) and updated [`.gitignore`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.gitignore) for `.sf/` and `.sfdx/`.
+
