@@ -1,6 +1,8 @@
 {
   "orgName": "vikaskumartank company",
-  "edition": "Developer",
+  "edition": "Enterprise",
+  "hasSampleData": true,
+  "namespace": "CONAPI",
   "features": ["EnableSetPasswordInApi"],
   "settings": {
     "lightningExperienceSettings": {
