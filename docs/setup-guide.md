@@ -259,12 +259,69 @@ sf project retrieve start --manifest manifest/package.xml
 sf project retrieve start --metadata ApexClass:AccountController
 ```
 
-### 3. Run Ad-Hoc Scripts
+### 3. Run Ad-Hoc Scripts & Queries
 ```bash
 # Execute anonymous Apex
 sf apex run --file scripts/salesforce/apex/hello.apex
 
 # Execute SOQL query against connected org
 sf data query --file scripts/salesforce/soql/account.soql
+sf data query --file scripts/salesforce/soql/media_accounts.soql
+
+# Execute Media Account Search via Integration Engine API
+curl -s -H "X-Session-ID: <session_id>" "http://localhost:8000/api/salesforce/records/Account?media_only=true"
+
+# Execute Multi-Object NLP Natural Language Queries via Integration Engine API
+# 1. Account Search
+curl -s -X POST "http://localhost:8000/api/salesforce/nlp-query" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: <session_id>" \
+  -d '{"query": "Search All Media Type of Account", "limit": 50}'
+
+# 2. Contact Search
+curl -s -X POST "http://localhost:8000/api/salesforce/nlp-query" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: <session_id>" \
+  -d '{"query": "Contacts with VP or Director title", "limit": 50}'
+
+# 3. Opportunity Search
+curl -s -X POST "http://localhost:8000/api/salesforce/nlp-query" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: <session_id>" \
+  -d '{"query": "Closed Won deals > 50000", "limit": 50}'
+
+# 4. Lead Search
+curl -s -X POST "http://localhost:8000/api/salesforce/nlp-query" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: <session_id>" \
+  -d '{"query": "Qualified leads in Media", "limit": 50}'
 ```
+
+---
+
+## 🎬 Testing Multi-Object NLP Queries in UI
+
+1. Open the UI at `http://localhost:3000`.
+2. Connect your Live Salesforce Org using **"Connect Live Salesforce"**.
+3. In the **Live Salesforce sObject Explorer** tab:
+   - **Account NLP Queries:**
+     - Select **Accounts** in the dropdown.
+     - Click **"Search All Media Type of Account"** or click chips like `"Get all accounts with media type"` or `"High revenue accounts ($1M+)"`.
+     - Displays Media accounts with purple badges (`Media`) and revenue details.
+   - **Contact NLP Queries:**
+     - Select **Contacts** or type `"Contacts with VP or Director title"`.
+     - The dropdown auto-switches to Contacts and loads executives with Title, Email, and Phone details.
+   - **Opportunity NLP Queries:**
+     - Select **Opportunities** or type `"Closed Won deals > $50k"`.
+     - Displays won deals with emerald badges (`Won`), Stage, Amount, and Probability.
+   - **Lead NLP Queries:**
+     - Select **Leads** or type `"Qualified leads in Media"`.
+     - Displays qualified leads with emerald badges (`Qualified`), Status, Company, and Email.
+   - **Cross-Object Auto-Switching:**
+     - Type any query targeting another object (e.g. typing `"Closed Won opportunities"` while on the Account tab) and press Enter or click **Run NLP**. The UI automatically switches to the detected object and renders its records.
+   - **Query Inspector:**
+     - Click **"Queries"** in the toolbar to inspect the exact generated **Salesforce SOQL** and **openCypher Graph Query** (compatible with Neo4j and AWS Neptune), alongside the NLP interpretation summary.
+
+
+
 

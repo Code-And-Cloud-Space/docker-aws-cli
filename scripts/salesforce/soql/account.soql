@@ -3,4 +3,11 @@
 //     query text and running the command:
 //     SFDX: Execute SOQL Query with Currently Selected Text
 
-SELECT Id, Name FROM Account
+// 1. Search All Media Type of Account (Show all Media Related Accounts)
+SELECT Id, Name, Type, Industry, Rating, Phone, AnnualRevenue, BillingCity, BillingState, CreatedDate, LastModifiedDate
+FROM Account
+WHERE Type = 'Media' OR Industry = 'Media' OR Type LIKE '%Media%' OR Industry LIKE '%Media%'
+ORDER BY LastModifiedDate DESC
+
+// 2. Query All Accounts
+SELECT Id, Name, Type, Industry, LastModifiedDate FROM Account ORDER BY LastModifiedDate DESC LIMIT 50

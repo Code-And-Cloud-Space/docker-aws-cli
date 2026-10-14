@@ -35,6 +35,12 @@ from .sync_service import (
     log_sync_event,
     SYNC_LOGS
 )
+from .nlp_query_service import nlp_service
+
+class NLPQueryPayload(BaseModel):
+    query: str
+    context_sobject: Optional[str] = None
+    limit: Optional[int] = 50
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -310,18 +316,72 @@ def list_managed_secrets(_auth: SalesforceOAuthToken = Depends(require_authentic
 @app.get("/api/salesforce/records/{sobject}")
 async def get_salesforce_records(
     sobject: str,
+    search: Optional[str] = None,
+    media_only: Optional[bool] = False,
     session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
     _auth: SalesforceOAuthToken = Depends(require_authenticated_salesforce_session)
 ):
     try:
         access_token, instance_url = await oauth_service.get_valid_token(db, session_id=session_id)
-        records = await sf_client.get_records(sobject, access_token=access_token, instance_url=instance_url)
-        return {"sobject": sobject, "totalSize": len(records), "records": records, "instanceUrl": instance_url}
+        records = await sf_client.get_records(
+            sobject, 
+            access_token=access_token, 
+            instance_url=instance_url,
+            search=search,
+            media_only=media_only
+        )
+        detected_entity = sobject
+        if getattr(sf_client, "last_nlp_interpretation", None):
+            detected_entity = sf_client.last_nlp_interpretation.get("entity", sobject)
+        return {
+            "sobject": detected_entity, 
+            "requestedSObject": sobject,
+            "totalSize": len(records), 
+            "records": records, 
+            "instanceUrl": instance_url,
+            "filter": "media_only" if media_only else (search if search else "all"),
+            "soql": getattr(sf_client, "last_soql_query", None),
+            "cypher": getattr(sf_client, "last_cypher_query", None),
+            "interpretation": getattr(sf_client, "last_nlp_interpretation", None)
+        }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=401 if "No active Salesforce session" in str(e) else 500, detail=str(e))
+
+@app.post("/api/salesforce/nlp-query")
+async def execute_nlp_salesforce_query(
+    payload: NLPQueryPayload,
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+    _auth: SalesforceOAuthToken = Depends(require_authenticated_salesforce_session)
+):
+    """Parses natural language queries (e.g. 'Search All Media Type of Account') and executes against Live Salesforce"""
+    access_token, instance_url = await oauth_service.get_valid_token(db=db, session_id=session_id)
+    parsed = nlp_service.parse_nlp_query(
+        payload.query, 
+        context_sobject=payload.context_sobject, 
+        default_limit=payload.limit or 50
+    )
+    soql = parsed["soql"]
+    cypher = parsed["cypher"]
+    sobject = parsed["sobject"]
+
+    try:
+        raw_records = await sf_client.query(soql=soql, access_token=access_token, instance_url=instance_url)
+        return {
+            "query": payload.query,
+            "sobject": sobject,
+            "soql": soql,
+            "cypher": cypher,
+            "interpretation": parsed["interpretation"],
+            "totalSize": len(raw_records),
+            "records": raw_records,
+            "instanceUrl": instance_url
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to execute NLP query SOQL: {str(e)}")
 
 @app.post("/api/salesforce/records/{sobject}")
 async def create_salesforce_record(
@@ -436,16 +496,27 @@ async def execute_custom_query(
                 "id": clean_r.get("Id", "")
             })
             
+        cypher = sf_client.to_cypher(
+            sobject=payload.sobject,
+            fields=fields_to_query,
+            filter_clause=payload.filter_clause,
+            sort_field=payload.sort_field,
+            sort_order=payload.sort_order or "DESC",
+            limit=limit_val
+        )
+
         log_sync_event("CUSTOM_QUERY_PULL", "SUCCESS", {
             "sobject": payload.sobject,
             "recordCount": len(raw_records),
             "soql": soql,
+            "cypher": cypher,
             "sessionId": session_id
         })
         
         return {
             "sobject": payload.sobject,
             "soql": soql,
+            "cypher": cypher,
             "total": len(raw_records),
             "fields": fields_to_query,
             "mappings": mappings,

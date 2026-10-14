@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtlClntAppOauthSettings xmlns="http://soap.sforce.com/2006/04/metadata">
+    <commaSeparatedOauthScopes>Api, Web, Full, RefreshToken</commaSeparatedOauthScopes>
+    <externalClientApplication>Document_Generator</externalClientApplication>
+    <isFirstPartyAppEnabled>false</isFirstPartyAppEnabled>
+    <label>Document_Generator_oauth</label>
+    <oauthLink>00Dbm000014VeXq:888bm000002wmxZ</oauthLink>
+</ExtlClntAppOauthSettings>

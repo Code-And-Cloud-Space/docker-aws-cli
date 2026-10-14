@@ -13,8 +13,32 @@ class SalesforceClient:
             "Content-Type": "application/json"
         }
 
-    async def get_records(self, sobject: str, access_token: str, instance_url: str) -> List[Dict[str, Any]]:
-        """Fetch records from live Salesforce Org via SOQL query using user credentials"""
+    def to_cypher(self, sobject: str, fields: List[str], filter_clause: Optional[str] = None, sort_field: Optional[str] = None, sort_order: str = "DESC", limit: int = 50) -> str:
+        """Converts sObject query parameters into openCypher/Neo4j query syntax"""
+        var_name = sobject[0].lower()
+        fields_str = ", ".join([f"{var_name}.{f.strip()}" for f in fields if f.strip()])
+        cypher = f"MATCH ({var_name}:{sobject})"
+        if filter_clause and filter_clause.strip():
+            clause = filter_clause.strip()
+            import re
+            for f in ["Type", "Industry", "Name", "AnnualRevenue", "BillingCity", "Phone", "LastModifiedDate"]:
+                clause = re.sub(rf"\b{f}\b", f"{var_name}.{f}", clause)
+            cypher += f" WHERE {clause}"
+        cypher += f" RETURN {fields_str}"
+        if sort_field and sort_field.strip():
+            cypher += f" ORDER BY {var_name}.{sort_field.strip()} {sort_order}"
+        cypher += f" LIMIT {limit}"
+        return cypher
+
+    async def get_records(
+        self, 
+        sobject: str, 
+        access_token: str, 
+        instance_url: str,
+        search: Optional[str] = None,
+        media_only: Optional[bool] = False
+    ) -> List[Dict[str, Any]]:
+        """Fetch records from live Salesforce Org via SOQL query using user credentials, supporting media filters and search"""
         fields_map = {
             "Account": "Id, Name, Type, Industry, AnnualRevenue, Phone, BillingCity, BillingCountry, CreatedDate, LastModifiedDate",
             "Contact": "Id, FirstName, LastName, Email, Title, AccountId, Phone, CreatedDate, LastModifiedDate",
@@ -22,19 +46,51 @@ class SalesforceClient:
             "Lead": "Id, FirstName, LastName, Company, Email, Status, Phone, CreatedDate, LastModifiedDate"
         }
         fields = fields_map.get(sobject, "Id, Name, CreatedDate, LastModifiedDate")
-        soql = f"SELECT {fields} FROM {sobject} ORDER BY LastModifiedDate DESC LIMIT 50"
+        fields_list = [f.strip() for f in fields.split(",") if f.strip()]
+        var_name = sobject[0].lower()
+
+        where_clauses = []
+        cypher_where_clauses = []
+        self.last_nlp_interpretation = None
+
+        # Check if query is media_only or NLP query
+        from .nlp_query_service import nlp_service
+        if media_only:
+            nlp_res = nlp_service.parse_nlp_query("all media", context_sobject=sobject)
+            self.last_nlp_interpretation = nlp_res["interpretation"]
+            soql = nlp_res["soql"]
+            cypher = nlp_res["cypher"]
+        elif search and search.strip():
+            nlp_res = nlp_service.parse_nlp_query(search.strip(), context_sobject=sobject)
+            self.last_nlp_interpretation = nlp_res["interpretation"]
+            soql = nlp_res["soql"]
+            cypher = nlp_res["cypher"]
+        else:
+            soql = f"SELECT {fields} FROM {sobject} ORDER BY LastModifiedDate DESC LIMIT 50"
+            fields_cypher = ", ".join([f"{var_name}.{f}" for f in fields_list])
+            cypher = f"MATCH ({var_name}:{sobject}) RETURN {fields_cypher} ORDER BY {var_name}.LastModifiedDate DESC LIMIT 50"
+            self.last_nlp_interpretation = {
+                "entity": sobject,
+                "is_media_query": False,
+                "notes": [f"Retrieved recent {sobject} records"],
+                "summary": f"Target: {sobject} ➔ Default recent records"
+            }
+
+        self.last_soql_query = soql
+        self.last_cypher_query = cypher
 
         try:
             return await self.query(soql, access_token=access_token, instance_url=instance_url)
         except Exception as e:
-            # Fallback to direct REST endpoint if SOQL query fails
-            headers = self._get_headers(access_token)
-            url = f"{instance_url.rstrip('/')}/services/data/{self.api_version}/sobjects/{sobject}"
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get(url, headers=headers)
-                if resp.status_code == 200:
-                    return resp.json().get("records", [])
-                raise e
+            # Fallback to direct REST endpoint if query fails and no search/media filter applied
+            if not (media_only or (search and search.strip())):
+                headers = self._get_headers(access_token)
+                url = f"{instance_url.rstrip('/')}/services/data/{self.api_version}/sobjects/{sobject}"
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.get(url, headers=headers)
+                    if resp.status_code == 200:
+                        return resp.json().get("records", [])
+            raise e
 
     async def get_record(self, sobject: str, record_id: str, access_token: str, instance_url: str) -> Optional[Dict[str, Any]]:
         headers = self._get_headers(access_token)

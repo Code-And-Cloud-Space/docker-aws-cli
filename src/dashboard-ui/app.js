@@ -446,11 +446,209 @@ async function disconnectSalesforce() {
 }
 
 // -----------------------------------------------------------------------------
+// Live Salesforce State & Query Globals
+// -----------------------------------------------------------------------------
+let currentSfFilter = null; // null | 'media_only' | string
+let currentExecutedSoql = "SELECT Id, Name, Type, Industry, AnnualRevenue, Phone, BillingCity FROM Account WHERE Type = 'Media' OR Industry = 'Media' ORDER BY LastModifiedDate DESC LIMIT 50";
+let currentExecutedCypher = "MATCH (a:Account) WHERE a.Type = 'Media' OR a.Industry = 'Media' OR toLower(a.Type) CONTAINS 'media' OR toLower(a.Industry) CONTAINS 'media' RETURN a.Id, a.Name, a.Type, a.Industry, a.AnnualRevenue, a.Phone ORDER BY a.LastModifiedDate DESC LIMIT 50";
+let currentInterpretationSummary = null;
+let studioSnippetLang = "soql";
+
+// Multi-Object NLP Prompts Configuration
+const NLP_CHIPS_CONFIG = {
+  Account: [
+    { text: "Search All Media Type of Account", icon: "fa-sparkles", primary: true },
+    { text: "Get all accounts with media type", icon: "fa-photo-film" },
+    { text: "Show all technology accounts", icon: "fa-microchip" },
+    { text: "High revenue accounts ($1M+)", icon: "fa-dollar-sign" },
+    { text: "Accounts in California", icon: "fa-location-dot" }
+  ],
+  Contact: [
+    { text: "Contacts with VP or Director title", icon: "fa-user-tie", primary: true },
+    { text: "Search Media related contacts", icon: "fa-photo-film" },
+    { text: "Contacts with Gmail", icon: "fa-envelope" },
+    { text: "Contacts with phone numbers", icon: "fa-phone" }
+  ],
+  Opportunity: [
+    { text: "Closed Won opportunities", icon: "fa-trophy", primary: true },
+    { text: "High value deals (> $100k)", icon: "fa-dollar-sign" },
+    { text: "Pipeline opportunities", icon: "fa-chart-line" },
+    { text: "Closed Lost opportunities", icon: "fa-circle-xmark" }
+  ],
+  Lead: [
+    { text: "Qualified leads", icon: "fa-circle-check", primary: true },
+    { text: "Open - Not Contacted leads", icon: "fa-user-clock" },
+    { text: "Media industry leads", icon: "fa-photo-film" },
+    { text: "Leads with email", icon: "fa-envelope" }
+  ]
+};
+
+function renderNlpPromptChips(sobject) {
+  const container = document.getElementById("nlp-prompt-chips");
+  if (!container) return;
+  const chips = NLP_CHIPS_CONFIG[sobject] || NLP_CHIPS_CONFIG.Account;
+  container.innerHTML = chips.map(c => {
+    if (c.primary) {
+      return `
+        <button type="button" onclick="runQuickNlp('${c.text}')" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-800/70 flex items-center gap-1.5 transition">
+          <i class="fa-solid ${c.icon} text-purple-400 text-[9px]"></i>
+          <span>"${c.text}"</span>
+        </button>
+      `;
+    }
+    return `
+      <button type="button" onclick="runQuickNlp('${c.text}')" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition">
+        <i class="fa-solid ${c.icon} text-slate-400 text-[9px]"></i>
+        <span>"${c.text}"</span>
+      </button>
+    `;
+  }).join("");
+
+  // Update primary action button dynamically per sObject
+  const primaryBtn = document.getElementById("btn-search-media-accounts");
+  if (primaryBtn) {
+    if (sobject === "Account") {
+      primaryBtn.innerHTML = `<i class="fa-solid fa-photo-film text-purple-200"></i><span id="btn-search-primary-text" class="font-semibold">Search All Media Type of Account</span>`;
+    } else if (sobject === "Contact") {
+      primaryBtn.innerHTML = `<i class="fa-solid fa-user-tie text-purple-200"></i><span id="btn-search-primary-text" class="font-semibold">Search VP & Director Contacts</span>`;
+    } else if (sobject === "Opportunity") {
+      primaryBtn.innerHTML = `<i class="fa-solid fa-trophy text-purple-200"></i><span id="btn-search-primary-text" class="font-semibold">Search Closed Won Deals</span>`;
+    } else if (sobject === "Lead") {
+      primaryBtn.innerHTML = `<i class="fa-solid fa-circle-check text-purple-200"></i><span id="btn-search-primary-text" class="font-semibold">Search Qualified Leads</span>`;
+    }
+  }
+}
+
+function onSfObjectSelectChange() {
+  const objSelect = document.getElementById("sf-object-select");
+  const sobject = objSelect ? objSelect.value : "Account";
+  renderNlpPromptChips(sobject);
+  loadSalesforceRecords();
+}
+
+// -----------------------------------------------------------------------------
 // Data Explorers
 // -----------------------------------------------------------------------------
+async function searchAllMediaAccounts() {
+  const objSelect = document.getElementById("sf-object-select");
+  const sobject = objSelect ? objSelect.value : "Account";
+  let promptText = "Search All Media Type of Account";
+  if (sobject === "Contact") promptText = "Contacts with VP or Director title";
+  else if (sobject === "Opportunity") promptText = "Closed Won opportunities";
+  else if (sobject === "Lead") promptText = "Qualified leads";
+
+  currentSfFilter = promptText;
+  const searchInput = document.getElementById("sf-search-input");
+  if (searchInput) searchInput.value = promptText;
+  showToast(`Running NLP Query: '${promptText}'...`, "info", 2000);
+  await loadSalesforceRecords();
+}
+
+function clearSfSearchFilter() {
+  currentSfFilter = null;
+  const searchInput = document.getElementById("sf-search-input");
+  if (searchInput) searchInput.value = "";
+  const nlpBadge = document.getElementById("sf-filter-nlp-badge");
+  if (nlpBadge) nlpBadge.classList.add("hidden");
+  loadSalesforceRecords();
+}
+
+function runQuickNlp(prompt) {
+  const searchInput = document.getElementById("sf-search-input");
+  if (searchInput) searchInput.value = prompt;
+  executeSfSearch();
+}
+
+function executeSfSearch() {
+  const searchInput = document.getElementById("sf-search-input");
+  const query = searchInput ? searchInput.value.trim() : "";
+  if (!query) {
+    clearSfSearchFilter();
+    return;
+  }
+  currentSfFilter = query;
+
+  // Auto-switch to appropriate entity if query explicitly refers to an sObject
+  const lower = query.toLowerCase();
+  const objSelect = document.getElementById("sf-object-select");
+  if (objSelect) {
+    if (lower.includes("contact")) {
+      objSelect.value = "Contact";
+    } else if (lower.includes("opportunity") || lower.includes("deal") || lower.includes("pipeline") || lower.includes("closed won") || lower.includes("closed lost")) {
+      objSelect.value = "Opportunity";
+    } else if (lower.includes("lead")) {
+      objSelect.value = "Lead";
+    } else if (lower.includes("account") || lower.includes("media type")) {
+      objSelect.value = "Account";
+    }
+    renderNlpPromptChips(objSelect.value);
+  }
+
+  loadSalesforceRecords();
+}
+
+async function createSampleMediaAccount() {
+  const sessId = getSessionId();
+  if (!isSalesforceConnected || !sessId) {
+    showToast("Please connect to Salesforce first using the Connect Live Salesforce button.", "warning");
+    return;
+  }
+  try {
+    showToast("Creating sample Media Account in Live Salesforce...", "info");
+    const payload = {
+      Name: "Universal Media Group Inc",
+      Type: "Media",
+      Industry: "Media",
+      Rating: "Hot",
+      Phone: "(555) 789-0123"
+    };
+    const res = await fetch(`${API_BASE}/api/salesforce/records/Account`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Failed to create sample Media account");
+    showToast(`Sample Media Account created in Live Salesforce! (ID: ${data.id || data.result?.id})`, "success");
+    currentSfFilter = "media_only";
+    await loadSalesforceRecords();
+    refreshAll();
+  } catch (err) {
+    showToast(`Error creating sample account: ${err.message}`, "error");
+  }
+}
+
 async function loadSalesforceRecords() {
   const sobject = document.getElementById("sf-object-select").value;
   const tbody = document.getElementById("sf-table-body");
+  const mediaBtn = document.getElementById("btn-search-media-accounts");
+  const clearBtn = document.getElementById("btn-clear-sf-filter");
+  const statusBar = document.getElementById("sf-filter-status-bar");
+  const badgeText = document.getElementById("sf-filter-badge-text");
+  const countText = document.getElementById("sf-filter-record-count");
+
+  // Keep primary search button visible and customized
+  if (mediaBtn) {
+    mediaBtn.style.display = "inline-flex";
+  }
+
+  // Update status bar UI
+  if (currentSfFilter) {
+    if (clearBtn) clearBtn.classList.remove("hidden");
+    if (statusBar) statusBar.classList.remove("hidden");
+    if (badgeText) {
+      if (currentSfFilter === "media_only") {
+        badgeText.innerHTML = `<i class="fa-solid fa-photo-film text-purple-300"></i><span>Filter: All Media Type of Account (Type / Industry = 'Media')</span>`;
+      } else if (currentInterpretationSummary) {
+        badgeText.innerHTML = `<i class="fa-solid fa-brain text-purple-300"></i><span>${currentInterpretationSummary}</span>`;
+      } else {
+        badgeText.innerHTML = `<i class="fa-solid fa-magnifying-glass text-indigo-300"></i><span>Filter: "${currentSfFilter}"</span>`;
+      }
+    }
+  } else {
+    if (clearBtn) clearBtn.classList.add("hidden");
+    if (statusBar) statusBar.classList.add("hidden");
+  }
 
   if (!isSalesforceConnected || !getSessionId()) {
     tbody.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-amber-400 font-medium"><div class="flex flex-col items-center justify-center space-y-2"><i class="fa-solid fa-lock text-3xl text-amber-500"></i><span class="text-sm font-semibold">Salesforce Connection Required</span><span class="text-xs text-slate-400">Please connect to Salesforce using the "Connect Live Salesforce" button above to view live records.</span></div></td></tr>`;
@@ -460,7 +658,18 @@ async function loadSalesforceRecords() {
   tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500"><i class="fa-solid fa-spinner animate-spin mr-2"></i>Loading ${sobject}s from Live Salesforce...</td></tr>`;
 
   try {
-    const res = await fetch(`${API_BASE}/api/salesforce/records/${sobject}`, {
+    let url = `${API_BASE}/api/salesforce/records/${sobject}`;
+    const params = new URLSearchParams();
+    if (currentSfFilter === "media_only") {
+      params.set("media_only", "true");
+    } else if (currentSfFilter) {
+      params.set("search", currentSfFilter);
+    }
+    if (params.toString()) {
+      url += `?${params.toString()}`;
+    }
+
+    const res = await fetch(url, {
       headers: getAuthHeaders()
     });
     
@@ -479,24 +688,129 @@ async function loadSalesforceRecords() {
     const data = await res.json();
     const records = data.records || [];
 
+    // Auto-switch UI selector if NLP engine detected a different entity
+    if (data.sobject && data.sobject !== sobject) {
+      const objSelect = document.getElementById("sf-object-select");
+      if (objSelect) {
+        objSelect.value = data.sobject;
+        renderNlpPromptChips(data.sobject);
+      }
+    }
+
+    if (data.soql) currentExecutedSoql = data.soql;
+    if (data.cypher) currentExecutedCypher = data.cypher;
+    if (data.interpretation && data.interpretation.summary) {
+      currentInterpretationSummary = data.interpretation.summary;
+    }
+
+    const nlpBadge = document.getElementById("sf-filter-nlp-badge");
+    const nlpText = document.getElementById("sf-filter-nlp-text");
+    if (data.interpretation && data.interpretation.summary) {
+      if (nlpBadge) nlpBadge.classList.remove("hidden");
+      if (nlpText) nlpText.textContent = data.interpretation.summary;
+      if (badgeText && currentSfFilter) {
+        badgeText.innerHTML = `<i class="fa-solid fa-brain text-purple-300"></i><span>${data.interpretation.summary}</span>`;
+      }
+    } else {
+      if (nlpBadge) nlpBadge.classList.add("hidden");
+    }
+
+    if (countText) {
+      countText.textContent = `${records.length} record${records.length === 1 ? '' : 's'} matching`;
+    }
+
+    const activeSObject = data.sobject || sobject;
+    const isMediaSearch = currentSfFilter === "media_only" || (currentSfFilter && currentSfFilter.toLowerCase().includes("media"));
     if (records.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500">No ${sobject} records found in Live Salesforce.</td></tr>`;
+      if (activeSObject === "Account" && isMediaSearch) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" class="py-12 text-center">
+              <div class="max-w-md mx-auto space-y-3">
+                <div class="w-12 h-12 rounded-full bg-purple-950/80 border border-purple-800 text-purple-300 flex items-center justify-center mx-auto text-xl shadow-inner">
+                  <i class="fa-solid fa-photo-film"></i>
+                </div>
+                <h4 class="text-sm font-semibold text-white">No Media Type Accounts Found</h4>
+                <p class="text-xs text-slate-400 leading-relaxed">No accounts in your Live Salesforce Org currently have Type or Industry set to 'Media'. You can generate a sample Media Account directly below to test the integration.</p>
+                <div class="pt-2 flex items-center justify-center gap-2.5">
+                  <button onclick="createSampleMediaAccount()" class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs px-3.5 py-2 rounded-lg font-medium shadow-md shadow-purple-900/30 flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>Create Sample Media Account</span>
+                  </button>
+                  <button onclick="clearSfSearchFilter()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-lg border border-slate-700 transition">
+                    Show All Accounts
+                  </button>
+                </div>
+              </div>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+      tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500">No ${activeSObject} records found in Live Salesforce.</td></tr>`;
       return;
     }
 
     tbody.innerHTML = records.map(r => {
-      const name = r.Name || `${r.FirstName || ''} ${r.LastName || ''}` || r.Title || "N/A";
-      const extra = r.Industry || r.Email || (r.Amount ? `$${Number(r.Amount).toLocaleString()}` : r.Company || "-");
+      const name = r.Name || `${r.FirstName || ''} ${r.LastName || ''}`.trim() || r.Title || "N/A";
+      
+      const isMedia = (
+        (r.Type && r.Type.toLowerCase().includes("media")) ||
+        (r.Industry && r.Industry.toLowerCase().includes("media")) ||
+        (r.Title && r.Title.toLowerCase().includes("media"))
+      );
+
+      let badgeHtml = "";
+      if (isMedia) {
+        badgeHtml += `
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-950/90 text-purple-300 border border-purple-700/70 shadow-sm ml-2">
+            <i class="fa-solid fa-photo-film text-[9px]"></i> Media
+          </span>
+        `;
+      }
+      if (r.StageName === "Closed Won") {
+        badgeHtml += `
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/90 text-emerald-300 border border-emerald-700/70 shadow-sm ml-2">
+            <i class="fa-solid fa-trophy text-[9px]"></i> Won
+          </span>
+        `;
+      } else if (r.Status && r.Status.toLowerCase().includes("qualified")) {
+        badgeHtml += `
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/90 text-emerald-300 border border-emerald-700/70 shadow-sm ml-2">
+            <i class="fa-solid fa-check text-[9px]"></i> Qualified
+          </span>
+        `;
+      }
+
+      let extra = "-";
+      if (activeSObject === "Account") {
+        extra = `Type: <b class="${r.Type === 'Media' ? 'text-purple-300' : 'text-slate-300'}">${r.Type || 'None'}</b> | Ind: <b class="${r.Industry === 'Media' ? 'text-purple-300' : 'text-slate-300'}">${r.Industry || 'None'}</b>`;
+        if (r.AnnualRevenue) {
+          extra += ` | Rev: $${Number(r.AnnualRevenue).toLocaleString()}`;
+        }
+      } else if (activeSObject === "Contact") {
+        extra = `Title: <b class="text-cyan-300">${r.Title || 'None'}</b> | Email: <b class="text-slate-300">${r.Email || 'None'}</b>${r.Phone ? ` | Tel: ${r.Phone}` : ''}`;
+      } else if (activeSObject === "Opportunity") {
+        extra = `Stage: <b class="${r.StageName === 'Closed Won' ? 'text-emerald-400 font-semibold' : (r.StageName === 'Closed Lost' ? 'text-rose-400' : 'text-amber-300')}">${r.StageName || 'None'}</b> | Amount: <b class="text-emerald-300">${r.Amount ? '$' + Number(r.Amount).toLocaleString() : 'N/A'}</b>${r.Probability !== undefined && r.Probability !== null ? ` (${r.Probability}%)` : ''}`;
+      } else if (activeSObject === "Lead") {
+        extra = `Status: <b class="${r.Status && r.Status.includes('Qualified') ? 'text-emerald-400' : 'text-indigo-300'}">${r.Status || 'None'}</b> | Company: <b class="text-slate-300">${r.Company || 'None'}</b> | Email: <b class="text-slate-300">${r.Email || 'None'}</b>`;
+      } else {
+        extra = r.Industry || r.Email || (r.Amount ? `$${Number(r.Amount).toLocaleString()}` : r.Company || "-");
+      }
+
       const modDate = r.LastModifiedDate ? new Date(r.LastModifiedDate).toLocaleString() : "N/A";
 
       return `
-        <tr class="hover:bg-slate-800/50 transition">
+        <tr class="hover:bg-slate-800/50 transition ${isMedia ? 'bg-purple-950/15' : ''}">
           <td class="py-3 px-4">${renderSalesforceIdLink(r.Id)}</td>
-          <td class="py-3 px-4 font-medium text-white">${name}</td>
+          <td class="py-3 px-4 font-medium text-white flex items-center flex-wrap">
+            <span>${name}</span>
+            ${badgeHtml}
+          </td>
           <td class="py-3 px-4 text-xs text-slate-400">${extra}</td>
           <td class="py-3 px-4 text-xs text-slate-500">${modDate}</td>
           <td class="py-3 px-4 text-right">
-            <button onclick="syncSingleRecord('${sobject}', '${r.Id}')" class="text-xs bg-slate-800 hover:bg-slate-700 text-cyan-400 hover:text-cyan-300 px-2.5 py-1.5 rounded border border-slate-700 transition">
+            <button onclick="syncSingleRecord('${activeSObject}', '${r.Id}')" class="text-xs bg-slate-800 hover:bg-slate-700 text-cyan-400 hover:text-cyan-300 px-2.5 py-1.5 rounded border border-slate-700 transition">
               <i class="fa-solid fa-cloud-arrow-up mr-1"></i> Sync to AWS & DB
             </button>
           </td>
@@ -1557,11 +1871,11 @@ async function executeStudioCustomQuery() {
       }, 100);
     }
 
-    // Show SOQL bar
+    // Show SOQL & Cypher snippet bar
     const soqlBar = document.getElementById("custom-soql-bar");
     const soqlText = document.getElementById("custom-soql-text");
     if (soqlBar && soqlText) {
-      soqlText.textContent = data.soql;
+      soqlText.textContent = (studioSnippetLang === "cypher" && data.cypher) ? data.cypher : data.soql;
       soqlBar.classList.remove("hidden");
     }
 
@@ -1672,16 +1986,175 @@ function switchStudioResultView(mode) {
   }
 }
 
-function copyExecutedSoql() {
-  const soql = document.getElementById("custom-soql-text").textContent;
-  if (!soql) return;
-  navigator.clipboard.writeText(soql).then(() => {
+function setStudioSnippetLang(lang) {
+  studioSnippetLang = lang;
+  const btnSoql = document.getElementById("btn-studio-snippet-soql");
+  const btnCypher = document.getElementById("btn-studio-snippet-cypher");
+  const soqlText = document.getElementById("custom-soql-text");
+
+  if (lang === "cypher") {
+    if (btnCypher) btnCypher.className = "px-2 py-0.5 rounded bg-emerald-600 text-white font-medium transition";
+    if (btnSoql) btnSoql.className = "px-2 py-0.5 rounded text-slate-400 hover:text-white transition";
+    if (soqlText && studioLastResult) {
+      soqlText.textContent = studioLastResult.cypher || "MATCH (a:Account) RETURN a";
+    }
+  } else {
+    if (btnSoql) btnSoql.className = "px-2 py-0.5 rounded bg-indigo-600 text-white font-medium transition";
+    if (btnCypher) btnCypher.className = "px-2 py-0.5 rounded text-slate-400 hover:text-white transition";
+    if (soqlText && studioLastResult) {
+      soqlText.textContent = studioLastResult.soql || "SELECT Id, Name FROM Account";
+    }
+  }
+}
+
+function copyExecutedStudioQuery() {
+  const soqlText = document.getElementById("custom-soql-text");
+  if (!soqlText) return;
+  const content = soqlText.textContent;
+  if (!content) return;
+  navigator.clipboard.writeText(content).then(() => {
     const textEl = document.getElementById("copy-soql-text");
-    const orig = textEl.textContent;
-    textEl.textContent = "Copied!";
-    showToast("SOQL query copied to clipboard!", "success", 2000);
-    setTimeout(() => { textEl.textContent = orig; }, 2000);
+    if (textEl) {
+      const orig = textEl.textContent;
+      textEl.textContent = "Copied!";
+      setTimeout(() => { textEl.textContent = orig; }, 2000);
+    }
+    showToast(`${studioSnippetLang.toUpperCase()} query copied to clipboard!`, "success", 2000);
   });
+}
+
+function copyExecutedSoql() {
+  copyExecutedStudioQuery();
+}
+
+function copyCurrentSoqlQuery() {
+  if (!currentExecutedSoql) return;
+  navigator.clipboard.writeText(currentExecutedSoql).then(() => {
+    showToast("SOQL query copied to clipboard!", "success", 2000);
+  });
+}
+
+function copyCurrentCypherQuery() {
+  if (!currentExecutedCypher) return;
+  navigator.clipboard.writeText(currentExecutedCypher).then(() => {
+    showToast("Cypher query copied to clipboard!", "success", 2000);
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Query Inspector Modal
+// -----------------------------------------------------------------------------
+function openQueryInspectorModal() {
+  const modal = document.getElementById("query-inspector-modal");
+  const soqlCode = document.getElementById("inspector-soql-code");
+  const cypherCode = document.getElementById("inspector-cypher-code");
+  const interpText = document.getElementById("inspector-interpretation-text");
+
+  if (soqlCode) {
+    soqlCode.textContent = currentExecutedSoql || "SELECT Id, Name, Type, Industry FROM Account WHERE Type = 'Media' OR Industry = 'Media' ORDER BY LastModifiedDate DESC LIMIT 50";
+  }
+  if (cypherCode) {
+    cypherCode.textContent = currentExecutedCypher || "MATCH (a:Account) WHERE a.Type = 'Media' OR a.Industry = 'Media' OR toLower(a.Type) CONTAINS 'media' OR toLower(a.Industry) CONTAINS 'media' RETURN a.Id, a.Name, a.Type, a.Industry, a.AnnualRevenue, a.Phone ORDER BY a.LastModifiedDate DESC LIMIT 50";
+  }
+  if (interpText) {
+    interpText.innerHTML = `<i class="fa-solid fa-sparkles text-purple-400"></i><span>${currentInterpretationSummary || currentSfFilter || "Default Query"}</span>`;
+  }
+
+  if (modal) modal.classList.remove("hidden");
+}
+
+function closeQueryInspectorModal() {
+  const modal = document.getElementById("query-inspector-modal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function switchQueryInspectorTab(tab) {
+  const btnSoql = document.getElementById("tab-inspector-soql");
+  const btnCypher = document.getElementById("tab-inspector-cypher");
+  const contentSoql = document.getElementById("inspector-content-soql");
+  const contentCypher = document.getElementById("inspector-content-cypher");
+
+  if (tab === "cypher") {
+    if (btnCypher) btnCypher.className = "pb-2 border-b-2 border-emerald-500 text-white flex items-center space-x-1.5 transition";
+    if (btnSoql) btnSoql.className = "pb-2 text-slate-400 hover:text-white flex items-center space-x-1.5 transition";
+    if (contentCypher) contentCypher.classList.remove("hidden");
+    if (contentSoql) contentSoql.classList.add("hidden");
+  } else {
+    if (btnSoql) btnSoql.className = "pb-2 border-b-2 border-indigo-500 text-white flex items-center space-x-1.5 transition";
+    if (btnCypher) btnCypher.className = "pb-2 text-slate-400 hover:text-white flex items-center space-x-1.5 transition";
+    if (contentSoql) contentSoql.classList.remove("hidden");
+    if (contentCypher) contentCypher.classList.add("hidden");
+  }
+}
+
+function copyInspectorQuery(type) {
+  const targetId = type === "cypher" ? "inspector-cypher-code" : "inspector-soql-code";
+  const labelId = type === "cypher" ? "copy-inspector-cypher-text" : "copy-inspector-soql-text";
+  const el = document.getElementById(targetId);
+  if (!el) return;
+
+  navigator.clipboard.writeText(el.textContent).then(() => {
+    const label = document.getElementById(labelId);
+    if (label) {
+      const orig = label.textContent;
+      label.textContent = "Copied!";
+      setTimeout(() => { label.textContent = orig; }, 2000);
+    }
+    showToast(`${type.toUpperCase()} query copied to clipboard!`, "success", 2000);
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Studio Presets
+// -----------------------------------------------------------------------------
+async function applyStudioMediaPreset() {
+  const objSelect = document.getElementById("studio-sobject-select");
+  if (objSelect) {
+    objSelect.value = "Account";
+    onStudioSobjectChange();
+  }
+
+  const filterInput = document.getElementById("studio-filter-clause");
+  if (filterInput) {
+    filterInput.value = "Type = 'Media' OR Industry = 'Media'";
+  }
+
+  const sortInput = document.getElementById("studio-sort-field");
+  if (sortInput) {
+    sortInput.value = "LastModifiedDate";
+  }
+
+  // Ensure default media fields are selected
+  ["Id", "Name", "Type", "Industry", "AnnualRevenue", "Phone", "BillingCity"].forEach(f => studioSelectedFields.add(f));
+  const searchInput = document.getElementById("mapping-field-search");
+  renderStudioFieldsList(searchInput ? searchInput.value : "");
+
+  showToast("Preset applied: 'Search All Media Type of Account'. Pulling live records...", "info", 2000);
+  await executeStudioCustomQuery();
+}
+
+async function applyStudioTechPreset() {
+  const objSelect = document.getElementById("studio-sobject-select");
+  if (objSelect) {
+    objSelect.value = "Account";
+    onStudioSobjectChange();
+  }
+
+  const filterInput = document.getElementById("studio-filter-clause");
+  if (filterInput) {
+    filterInput.value = "Industry = 'Technology'";
+  }
+
+  const sortInput = document.getElementById("studio-sort-field");
+  if (sortInput) {
+    sortInput.value = "LastModifiedDate";
+  }
+
+  ["Id", "Name", "Industry", "AnnualRevenue", "Phone"].forEach(f => studioSelectedFields.add(f));
+  const searchInput = document.getElementById("mapping-field-search");
+  renderStudioFieldsList(searchInput ? searchInput.value : "");
+
+  await executeStudioCustomQuery();
 }
 
 function exportCustomQueryResult(format) {
@@ -1897,6 +2370,7 @@ function resetMappingStudioForm() {
 // Initial Boot
 window.addEventListener("DOMContentLoaded", async () => {
   renderLockedStateForAllTabs();
+  renderNlpPromptChips("Account");
   handleOAuthParams();
   await refreshAll();
   setInterval(checkHealth, 15000);

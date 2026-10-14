@@ -166,7 +166,7 @@
           <p class="text-xs text-slate-400">Viewing real-time sObjects from your live Salesforce instance using authenticated user OAuth token.</p>
         </div>
         <div class="flex items-center space-x-3">
-          <select id="sf-object-select" onchange="loadSalesforceRecords()" class="bg-slate-800 border border-slate-700 text-sm rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+          <select id="sf-object-select" onchange="onSfObjectSelectChange()" class="bg-slate-800 border border-slate-700 text-sm rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500">
             <option value="Account">Accounts</option>
             <option value="Contact">Contacts</option>
             <option value="Opportunity">Opportunities</option>
@@ -176,6 +176,77 @@
             <i class="fa-solid fa-plus"></i>
             <span>New Record</span>
           </button>
+        </div>
+      </div>
+
+      <!-- Search & Query Action Toolbar (NLP & Direct Search) -->
+      <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+        <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          <!-- Live NLP search input -->
+          <div class="relative flex-1">
+            <i class="fa-solid fa-wand-magic-sparkles absolute left-3 top-2.5 text-purple-400 text-xs"></i>
+            <input type="text" id="sf-search-input" onkeydown="if(event.key==='Enter') executeSfSearch()" placeholder='Try NLP query: e.g. "Search All Media Type of Account", "Closed Won deals", "VP contacts"...' class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg pl-9 pr-24 py-2.5 text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 shadow-inner">
+            <button onclick="executeSfSearch()" class="absolute right-1.5 top-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-[11px] font-medium px-3 py-1 rounded transition shadow">Run NLP</button>
+          </div>
+
+          <!-- Primary Search Option: Search All Media Type of Account -->
+          <div class="flex items-center gap-2 flex-wrap">
+            <button onclick="searchAllMediaAccounts()" id="btn-search-media-accounts" class="bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs px-3.5 py-2.5 rounded-lg font-medium shadow-md shadow-purple-900/40 flex items-center gap-1.5 transition cursor-pointer border border-purple-500/50">
+              <i class="fa-solid fa-photo-film text-purple-200"></i>
+              <span id="btn-search-primary-text" class="font-semibold">Search All Media Type of Account</span>
+            </button>
+            <button onclick="clearSfSearchFilter()" id="btn-clear-sf-filter" class="hidden bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2.5 rounded-lg border border-slate-700 flex items-center gap-1.5 transition">
+              <i class="fa-solid fa-xmark"></i>
+              <span>Show All</span>
+            </button>
+            <button onclick="openQueryInspectorModal()" class="bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-700/60 text-xs px-3 py-2.5 rounded-lg flex items-center gap-1.5 transition" title="Inspect SOQL & Cypher Queries">
+              <i class="fa-solid fa-code"></i>
+              <span>Queries</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Quick NLP Prompt Chips -->
+        <div class="flex items-center gap-2 flex-wrap pt-1 text-xs">
+          <span class="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+            <i class="fa-solid fa-lightbulb text-amber-400 text-[10px]"></i>
+            <span>NLP Prompts:</span>
+          </span>
+          <div id="nlp-prompt-chips" class="flex items-center gap-2 flex-wrap">
+            <button type="button" onclick="runQuickNlp('Search All Media Type of Account')" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-purple-950/70 hover:bg-purple-900 text-purple-300 border border-purple-800/60 flex items-center gap-1.5 transition">
+              <i class="fa-solid fa-sparkles text-purple-400 text-[9px]"></i>
+              <span>"Search All Media Type of Account"</span>
+            </button>
+            <button type="button" onclick="runQuickNlp('Get all accounts with media type')" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition">
+              <span>"Get all accounts with media type"</span>
+            </button>
+            <button type="button" onclick="runQuickNlp('Show all technology accounts')" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition">
+              <span>"Show all technology accounts"</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter Status & Query Snippets Bar -->
+        <div id="sf-filter-status-bar" class="hidden pt-3 border-t border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-2 text-xs">
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-950 text-purple-300 border border-purple-700/80" id="sf-filter-badge-text">
+              <i class="fa-solid fa-photo-film"></i>
+              <span>Filter: All Media Type of Account</span>
+            </span>
+            <span class="text-emerald-400 text-[11px] font-mono bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/60 hidden" id="sf-filter-nlp-badge">
+              <i class="fa-solid fa-brain mr-1"></i><span id="sf-filter-nlp-text">NLP Parsed</span>
+            </span>
+            <span class="text-slate-400 text-xs" id="sf-filter-record-count">0 records matching</span>
+          </div>
+          <div class="flex items-center gap-2 font-mono text-[11px] text-slate-400">
+            <span class="text-slate-500">Query:</span>
+            <button onclick="copyCurrentSoqlQuery()" class="bg-slate-950 hover:bg-slate-800 text-indigo-300 border border-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1">
+              <i class="fa-solid fa-copy text-[10px]"></i> Copy SOQL
+            </button>
+            <button onclick="copyCurrentCypherQuery()" class="bg-slate-950 hover:bg-slate-800 text-emerald-300 border border-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1">
+              <i class="fa-solid fa-copy text-[10px]"></i> Copy Cypher
+            </button>
+          </div>
         </div>
       </div>
 
@@ -587,7 +658,19 @@
             <div>
               <label class="text-xs text-slate-400 block mb-1">SOQL WHERE Filter Clause (Optional):</label>
               <input type="text" id="studio-filter-clause" placeholder="e.g. Type = 'Customer - Direct' AND AnnualRevenue > 500000" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500">
-              <span class="text-[11px] text-slate-500 block mt-1">Use standard SOQL conditions (e.g. Industry = 'Technology' OR StageName = 'Closed Won')</span>
+              <div class="flex items-center justify-between flex-wrap gap-2 mt-1.5">
+                <span class="text-[11px] text-slate-500">Use standard SOQL conditions (e.g. Type = 'Media' OR Industry = 'Media')</span>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-[10px] uppercase font-bold text-slate-500">Preset:</span>
+                  <button type="button" onclick="applyStudioMediaPreset()" class="bg-gradient-to-r from-purple-900/80 to-indigo-900/80 hover:from-purple-800 hover:to-indigo-800 text-purple-300 border border-purple-700/60 text-[11px] px-2.5 py-0.5 rounded-md flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-photo-film text-[10px]"></i>
+                    <span class="font-medium">Search All Media Type of Account</span>
+                  </button>
+                  <button type="button" onclick="applyStudioTechPreset()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] px-2 py-0.5 rounded-md transition">
+                    Tech Accounts
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -658,13 +741,21 @@
               </div>
             </div>
 
-            <!-- Executed SOQL Snippet Bar -->
-            <div id="custom-soql-bar" class="hidden px-5 py-2.5 bg-slate-950 border-b border-slate-800/80 flex items-center justify-between text-xs font-mono text-indigo-300">
-              <span class="truncate flex-1" id="custom-soql-text">SELECT Id, Name FROM Account</span>
-              <button onclick="copyExecutedSoql()" class="text-slate-400 hover:text-white ml-3 text-xs flex items-center gap-1.5" title="Copy SOQL">
-                <i class="fa-solid fa-copy"></i>
-                <span id="copy-soql-text">Copy SOQL</span>
-              </button>
+            <!-- Executed SOQL & Cypher Snippet Bar -->
+            <div id="custom-soql-bar" class="hidden px-5 py-2.5 bg-slate-950 border-b border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono">
+              <div class="flex items-center space-x-2 truncate flex-1">
+                <div class="bg-slate-800 p-0.5 rounded flex border border-slate-700 text-[11px] shrink-0">
+                  <button type="button" onclick="setStudioSnippetLang('soql')" id="btn-studio-snippet-soql" class="px-2 py-0.5 rounded bg-indigo-600 text-white font-medium transition">SOQL</button>
+                  <button type="button" onclick="setStudioSnippetLang('cypher')" id="btn-studio-snippet-cypher" class="px-2 py-0.5 rounded text-slate-400 hover:text-white transition">Cypher</button>
+                </div>
+                <span class="truncate text-indigo-300 flex-1 font-mono" id="custom-soql-text">SELECT Id, Name FROM Account</span>
+              </div>
+              <div class="flex items-center space-x-2 shrink-0">
+                <button onclick="copyExecutedStudioQuery()" class="text-slate-400 hover:text-white text-xs flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 px-2.5 py-1 rounded border border-slate-800 transition" title="Copy Query">
+                  <i class="fa-solid fa-copy"></i>
+                  <span id="copy-soql-text">Copy Query</span>
+                </button>
+              </div>
             </div>
 
             <!-- Data Table Container -->
@@ -836,6 +927,70 @@
           <i class="fa-solid fa-plus"></i>
           <span>Add Column to Table</span>
         </button>
+      </div>
+    </div>
+  <!-- Query Inspector Modal (SOQL & Cypher) -->
+  <div id="query-inspector-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-2xl flex flex-col shadow-2xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/70">
+        <div class="flex items-center space-x-3">
+          <div class="p-2 bg-purple-950/80 rounded-lg text-purple-400 border border-purple-800/60">
+            <i class="fa-solid fa-code text-base"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold text-white">Salesforce SOQL & Cypher Query Inspector</h3>
+            <p class="text-[11px] text-slate-400">View, test and copy live queries for Salesforce CRM or Neo4j / Graph Databases</p>
+          </div>
+        </div>
+        <button onclick="closeQueryInspectorModal()" class="text-slate-400 hover:text-white text-lg font-bold">&times;</button>
+      </div>
+
+      <div class="p-5 space-y-4">
+        <!-- Tab selector for queries -->
+        <div class="flex border-b border-slate-800 space-x-4 text-xs font-medium">
+          <button type="button" onclick="switchQueryInspectorTab('soql')" id="tab-inspector-soql" class="pb-2 border-b-2 border-indigo-500 text-white flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-database text-indigo-400"></i>
+            <span>SOQL Query (Salesforce Live)</span>
+          </button>
+          <button type="button" onclick="switchQueryInspectorTab('cypher')" id="tab-inspector-cypher" class="pb-2 text-slate-400 hover:text-white flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-circle-nodes text-emerald-400"></i>
+            <span>Cypher Query (Graph / Neo4j / Neptune)</span>
+          </button>
+        </div>
+
+        <!-- SOQL Content Panel -->
+        <div id="inspector-content-soql" class="space-y-2">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span class="font-medium text-slate-300">Salesforce Object Query Language (SOQL):</span>
+            <button type="button" onclick="copyInspectorQuery('soql')" class="text-indigo-400 hover:text-indigo-300 text-xs flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded border border-slate-800 transition">
+              <i class="fa-solid fa-copy"></i>
+              <span id="copy-inspector-soql-text">Copy SOQL</span>
+            </button>
+          </div>
+          <pre id="inspector-soql-code" class="bg-slate-950 p-4 rounded-lg border border-slate-800 text-xs font-mono text-indigo-300 whitespace-pre-wrap break-words max-h-56 overflow-y-auto">SELECT Id, Name, Type, Industry FROM Account WHERE Type = 'Media' OR Industry = 'Media'</pre>
+          <p class="text-[11px] text-slate-500">Executes directly against your Live Salesforce Org via Salesforce REST API.</p>
+        </div>
+
+        <!-- Cypher Content Panel -->
+        <div id="inspector-content-cypher" class="space-y-2 hidden">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span class="font-medium text-slate-300">Graph Query Language (Cypher / openCypher):</span>
+            <button type="button" onclick="copyInspectorQuery('cypher')" class="text-emerald-400 hover:text-emerald-300 text-xs flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded border border-slate-800 transition">
+              <i class="fa-solid fa-copy"></i>
+              <span id="copy-inspector-cypher-text">Copy Cypher</span>
+            </button>
+          </div>
+          <pre id="inspector-cypher-code" class="bg-slate-950 p-4 rounded-lg border border-slate-800 text-xs font-mono text-emerald-300 whitespace-pre-wrap break-words max-h-56 overflow-y-auto">MATCH (a:Account) WHERE a.Type = 'Media' OR a.Industry = 'Media' RETURN a</pre>
+          <p class="text-[11px] text-slate-500">Compatible with Neo4j, Memgraph, and AWS Neptune openCypher query engines.</p>
+        </div>
+      </div>
+
+      <div class="px-6 py-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between text-xs">
+        <span class="text-slate-400 flex items-center gap-1.5" id="inspector-interpretation-text">
+          <i class="fa-solid fa-sparkles text-purple-400"></i>
+          <span>NLP Query Inspector</span>
+        </span>
+        <button type="button" onclick="closeQueryInspectorModal()" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition">Close</button>
       </div>
     </div>
   </div>

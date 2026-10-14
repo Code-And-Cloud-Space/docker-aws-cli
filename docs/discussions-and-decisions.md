@@ -332,3 +332,101 @@ This document captures discussion notes, design requirements, and Architectural 
   - Added scratch org definition [`config/project-scratch-def.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/config/project-scratch-def.json).
   - Configured [`.forceignore`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.forceignore) and updated [`.gitignore`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.gitignore) for `.sf/` and `.sfdx/`.
 
+---
+
+### ADR-017: Multi-Model Query Engine (SOQL & OpenCypher Graph Translation) & Media Account Search Interface
+- **Date:** 2026-10-14
+- **Status:** Accepted
+- **Context:**
+  - The user requested a search option in the UI: `"Search All Media Type of Account"` that returns and displays all Media-related accounts in the Live Salesforce Explorer.
+  - The user also requested updates to the query logic and Cypher query representation, enabling compatibility between relational/CRM SOQL and Graph Database (Neo4j / Memgraph / AWS Neptune openCypher) queries.
+- **Decisions:**
+  1. **Dual SOQL & OpenCypher Query Generation:**
+     - Implement `to_cypher()` translator in [`src/integration-engine/app/salesforce_client.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/salesforce_client.py) converting sObject filters, fields, sorting, and limits to standardized openCypher/Neo4j query syntax (`MATCH (a:Account) WHERE ... RETURN ...`).
+     - Return both `soql` and `cypher` queries in responses from `GET /api/salesforce/records/{sobject}` and `POST /api/salesforce/custom-query`.
+  2. **Dedicated UI Search Option & Badging:**
+     - In [`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html) and [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js), implement a primary action button `🎬 Search All Media Type of Account` along with a real-time search input bar.
+     - When active, queries Salesforce accounts with `WHERE Type = 'Media' OR Industry = 'Media' OR Type LIKE '%Media%' OR Industry LIKE '%Media%' OR Name LIKE '%Media%'`.
+     - Highlight Media accounts in the table with purple pills (`<i class="fa-solid fa-photo-film"></i> Media`).
+     - Display a dynamic active filter status bar with matching record count and quick copy buttons for both SOQL and Cypher.
+  3. **Zero-Data Fallback with 1-Click Sample Creation:**
+     - If the user's Live Salesforce Org has no Media accounts, render a friendly empty-state card with a 1-click button to automatically create a sample `"Universal Media Group Inc"` account and immediately refresh the query.
+  4. **Query Inspector Modal & Studio Presets:**
+     - Add `#query-inspector-modal` for comparing and copying SOQL and Cypher syntax side-by-side.
+     - Add preset button in Admin Query Studio (Step 3) to configure and run the Media Account query.
+     - Add language switcher (`SOQL` / `Cypher`) in the Query Studio Executed Snippet bar.
+  5. **Query Scripts:**
+     - Create [`scripts/salesforce/cypher/account.cypher`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/cypher/account.cypher) and [`scripts/salesforce/soql/media_accounts.soql`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/soql/media_accounts.soql).
+
+---
+
+### Session 40: Media Account Search & SOQL / Cypher Query Support
+- **User Requirement:** "hey i want you to update the ui and cypher query and i want a search option like 'Search All Media Type of Account' then it should Show all Media Related Accounts"
+- **Resolution:**
+  - Added the "Search All Media Type of Account" search option in the Live Salesforce sObject Explorer.
+  - Implemented Cypher query generator and SOQL filtering in the backend integration engine.
+  - Added interactive Query Inspector modal, Query Studio preset, and Cypher/SOQL script files.
+
+---
+
+### ADR-018: Natural Language Processing (NLP) Query Engine for Salesforce & Graph Databases
+- **Date:** 2026-10-14
+- **Status:** Accepted
+- **Context:**
+  - User clarified: `"Search All Media Type of Account" this NLP query that should need to work like this it should get all accounts with media type`.
+  - The requirement specifies that `"Search All Media Type of Account"` is a natural language (NLP) query, and the platform must dynamically parse natural language intent, identify the entity (`Account`), extract criteria (`Type/Industry = 'Media'`), and execute the resulting queries.
+- **Decisions:**
+  1. **Dedicated NLP Service Architecture:**
+     - Created [`src/integration-engine/app/nlp_query_service.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/nlp_query_service.py) with `NLPQueryService.parse_nlp_query()`.
+     - Analyzes input phrases for entity terms (e.g. "account", "company", "contact", "opportunity", "lead").
+     - Matches semantic query intent like `"Search All Media Type of Account"`, `"all accounts with media type"`, `"show media accounts"`, or `"find media type of account"`.
+     - Constructs both standard Salesforce SOQL queries and openCypher/Neo4j graph queries.
+     - Produces human-readable interpretation summaries for UI feedback.
+  2. **API Endpoint & In-Flight Interception:**
+     - Exposed `POST /api/salesforce/nlp-query` for direct NLP query evaluation.
+     - Integrated NLP parser inside `get_salesforce_records` so any natural language search string entered in the search bar is parsed into an optimized query.
+  3. **UI Prompts & Interactive Chips:**
+     - Added dedicated NLP prompt suggestion chips in [`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html) (`"Search All Media Type of Account"`, `"Get all accounts with media type"`, `"Show all technology accounts"`).
+     - Added an NLP badge (`#sf-filter-nlp-badge`) in [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) that reveals the backend NLP interpretation.
+
+---
+
+### ADR-019: Multi-Object Natural Language Processing (NLP) Across All Salesforce sObjects
+- **Date:** 2026-10-15
+- **Status:** Accepted
+- **Context:**
+  - User requested: `"NLP search should need to for all object including contact, opportunity etc"`.
+  - The NLP query engine needed to be expanded from Account-only media filtering to a universal query engine across `Account`, `Contact`, `Opportunity`, and `Lead`.
+- **Decisions:**
+  1. **Cross-Object Entity Resolution & Synonyms:**
+     - Expanded `NLPQueryService.parse_nlp_query()` in [`src/integration-engine/app/nlp_query_service.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/nlp_query_service.py) with entity detection patterns:
+       - **Account:** `accounts?`, `companies?`, `organizations?`, `clients?`
+       - **Contact:** `contacts?`, `people`, `persons?`, `executives?`, `stakeholders?`
+       - **Opportunity:** `opportunities?`, `opps?`, `deals?`, `pipeline`, `sales?`
+       - **Lead:** `leads?`, `prospects?`
+     - Uses `context_sobject` as a default fallback when no explicit entity is mentioned.
+  2. **Domain-Specific Attribute Extraction:**
+     - **Contact:** Parses job titles (`VP`, `Vice President`, `Director`, `Manager`, `CEO/CFO/CTO`, `Engineer`, `Developer`, `Sales`, `Marketing`), Gmail domains (`@gmail.com`), presence of email/phone, and media-related contact roles.
+     - **Opportunity:** Parses deal stages (`Closed Won`, `Closed Lost`, `Prospecting`, `Qualification`, `Negotiation`), dollar amounts (`> $50,000`, `over 100k`), high-value thresholds, and open pipeline stages (`NOT IN ('Closed Won', 'Closed Lost')`).
+     - **Lead:** Parses lead qualification stages (`Qualified`, `Open - Not Contacted`, `Working`), media industry leads, and contact criteria.
+     - **Account:** Parses media types/industries, technology sectors, annual revenue thresholds, and geographic billing criteria.
+  3. **Dual-Engine Output (SOQL + openCypher):**
+     - Automatically generates valid SOQL syntax with correct field selections per object.
+     - Simultaneously generates graph openCypher queries matching Neo4j and AWS Neptune syntax.
+     - Provides clear human-readable interpretation summaries explaining detected targets and filters.
+  4. **Dynamic Frontend Contextual Chips & Auto-Switching:**
+     - In [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js), implemented `renderNlpPromptChips(sobject)` to present contextual query chips tailored for each sObject.
+     - Added auto-switching: if a user types a query explicitly naming another entity (e.g., "Closed Won deals" while viewing Accounts), the UI auto-switches the dropdown to Opportunities.
+     - Enhanced table rows with object-specific detail columns and status badges (`Media`, `Won`, `Qualified`).
+
+---
+
+### Session 42: Universal Multi-Object NLP Search Engine
+- **User Requirement:** `"NLP search should need to for all object including contact, opportunity etc"`
+- **Resolution:**
+  - Upgraded [`src/integration-engine/app/nlp_query_service.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/nlp_query_service.py) to support Account, Contact, Opportunity, and Lead.
+  - Added contextual prompt chips, auto-switching object selector, and object-specific badges in [`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html) and [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js).
+  - Verified SOQL and Cypher generation across all entities.
+
+
+

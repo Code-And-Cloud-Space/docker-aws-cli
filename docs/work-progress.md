@@ -80,12 +80,65 @@ This document tracks all work items, development milestones, current status, and
 | | - Added project manifest [`manifest/package.xml`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/manifest/package.xml) (API v67.0) | 🟢 Complete | 2026-10-14 |
 | | - Configured [`sfdx-project.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/sfdx-project.json) and [`.forceignore`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/.forceignore) | 🟢 Complete | 2026-10-14 |
 | | - Configured scratch org definition [`config/project-scratch-def.json`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/config/project-scratch-def.json) and script templates | 🟢 Complete | 2026-10-14 |
+| **Phase 15** | **Media Type Account Search, SOQL & Cypher Query Engine** | 🟢 Complete | 2026-10-14 |
+| | - Added "Search All Media Type of Account" one-click search button in Live Salesforce Explorer | 🟢 Complete | 2026-10-14 |
+| | - Added text search filter bar with live debounce and query execution | 🟢 Complete | 2026-10-14 |
+| | - Added dynamic openCypher / Neo4j query translator (`sf_client.to_cypher`) in integration engine | 🟢 Complete | 2026-10-14 |
+| | - Added backend query parameters `search` and `media_only` to `GET /api/salesforce/records/{sobject}` | 🟢 Complete | 2026-10-14 |
+| | - Integrated Cypher query generation and return in `POST /api/salesforce/custom-query` | 🟢 Complete | 2026-10-14 |
+| | - Created interactive "Salesforce SOQL & Cypher Query Inspector" modal with syntax copying | 🟢 Complete | 2026-10-14 |
+| | - Added SOQL / Cypher view toggle in Admin Query Studio executed snippet bar | 🟢 Complete | 2026-10-14 |
+| | - Added quick query presets in Admin Query Studio including "Search All Media Type of Account" | 🟢 Complete | 2026-10-14 |
+| | - Added purple Media badges in account table rows for accounts with Type or Industry set to Media | 🟢 Complete | 2026-10-14 |
+| | - Added zero-results fallback with 1-click sample Media Account creation in Live Salesforce | 🟢 Complete | 2026-10-14 |
+| | - Created dedicated query files: [`scripts/salesforce/cypher/account.cypher`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/cypher/account.cypher) and [`scripts/salesforce/soql/media_accounts.soql`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/soql/media_accounts.soql) | 🟢 Complete | 2026-10-14 |
+| **Phase 16** | **NLP Natural Language Query Parser Engine & Interactive Chips** | 🟢 Complete | 2026-10-14 |
+| | - Created [`src/integration-engine/app/nlp_query_service.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/nlp_query_service.py) for entity & intent extraction | 🟢 Complete | 2026-10-14 |
+| | - Added endpoint `POST /api/salesforce/nlp-query` returning parsed SOQL, Cypher & interpretation | 🟢 Complete | 2026-10-14 |
+| | - Added interactive NLP query chips and Run NLP execution button in Live Salesforce Explorer | 🟢 Complete | 2026-10-14 |
+| | - Added dynamic NLP interpretation badge (`#sf-filter-nlp-badge`) displaying parsed intent in UI | 🟢 Complete | 2026-10-14 |
 
 ---
 
 ## 📝 Activity Log
 
 ### 2026-10-14
+- **Implemented Natural Language (NLP) Query Engine for Media Accounts & sObjects:**
+  - **User Requirement:** "Search All Media Type of Account" this NLP query that should need to work like this it should get all accounts with media type.
+  - **NLP Engine Architecture ([`src/integration-engine/app/nlp_query_service.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/nlp_query_service.py)):**
+    - Built `NLPQueryService.parse_nlp_query(query_text)` to dynamically parse natural language queries.
+    - Accurately recognizes queries like `"Search All Media Type of Account"`, `"Get all accounts with media type"`, `"Show media accounts"`, and extracts:
+      - Target entity: `Account`.
+      - Target criteria: `Type = 'Media' OR Industry = 'Media' OR Type LIKE '%Media%' OR Industry LIKE '%Media%' OR Name LIKE '%Media%'`.
+      - OpenCypher Graph representation: `MATCH (a:Account) WHERE (a.Type = 'Media' ...) RETURN ...`.
+      - Human-readable interpretation summary: `"Identified criteria: Account Type or Industry matches 'Media'"`.
+  - **API & Engine Integration ([`src/integration-engine/app/main.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/main.py)):**
+    - Added `POST /api/salesforce/nlp-query` taking `NLPQueryPayload(query, limit)`.
+    - Integrated NLP parsing directly into `get_salesforce_records` so any NLP query entered in the search bar is dynamically translated.
+    - Returns `interpretation` metadata alongside records, SOQL, and Cypher queries.
+  - **Dashboard UI NLP Enhancements ([`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html) & [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js)):**
+    - Updated search toolbar with NLP placeholder, gradient "Run NLP" action button, and interactive NLP prompt chips (`"Search All Media Type of Account"`, `"Get all accounts with media type"`, `"Show all technology accounts"`).
+    - Added green NLP interpretation badge displaying how the query was parsed.
+    - Auto-switches target entity dropdown to `Account` when an account/media NLP query is entered.
+- **Implemented "Search All Media Type of Account" & SOQL / Cypher Query Engine:**
+  - **User Requirement:** Add UI search option "Search All Media Type of Account" that returns and shows all Media Related Accounts, with Cypher and SOQL query support.
+  - **Backend Integration Engine Updates ([`src/integration-engine/app/salesforce_client.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/salesforce_client.py) & [`src/integration-engine/app/main.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/main.py)):**
+    - Extended `SalesforceClient.get_records` with `search: Optional[str]` and `media_only: Optional[bool]`.
+    - Added `SalesforceClient.to_cypher` to generate graph-compliant openCypher queries for Neo4j, Memgraph, and AWS Neptune.
+    - Updated endpoint `GET /api/salesforce/records/{sobject}` to accept `search` and `media_only` query parameters and return executed `soql` and `cypher` queries.
+    - Updated `POST /api/salesforce/custom-query` to return both `soql` and `cypher` query strings for live introspection.
+  - **Dashboard UI Enhancements ([`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html) & [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js)):**
+    - Added a search input and primary action button **"Search All Media Type of Account"** in the Live Salesforce sObject Explorer toolbar.
+    - Added active filter notification bar with matching record count and quick "Copy SOQL" / "Copy Cypher" buttons.
+    - Added visual badges highlighting Media accounts with purple pill indicators (`<i class="fa-solid fa-photo-film"></i> Media`).
+    - Added empty state handler with one-click "Create Sample Media Account (Universal Media Group Inc)" to verify in live orgs lacking Media data.
+    - Added "Salesforce SOQL & Cypher Query Inspector" modal (`#query-inspector-modal`) displaying side-by-side formatted queries with clipboard copy.
+    - Added "Search All Media Type of Account" quick preset button in Admin Query Studio (Step 3).
+    - Upgraded Executed Query bar in Query Studio to toggle between SOQL and Cypher representation.
+  - **Query Artifacts Created:**
+    - [`scripts/salesforce/cypher/account.cypher`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/cypher/account.cypher): OpenCypher queries for matching Media Accounts and traversing connected Contact / Opportunity nodes.
+    - [`scripts/salesforce/soql/account.soql`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/soql/account.soql): Updated with Media search query clause.
+    - [`scripts/salesforce/soql/media_accounts.soql`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/soql/media_accounts.soql): Dedicated SOQL query script.
 - **Initialized Standard Salesforce DX (`force-app`) Structure & Tooling Suite:**
   - Scaffolding created for Salesforce DX source-format directory structure under `force-app/main/default/`:
     - `classes`, `triggers`, `lwc`, `aura`, `objects`, `permissionsets`, `tabs`, `flexipages`, `layouts`, `applications`, `staticresources`, `contentassets`.
@@ -185,15 +238,35 @@ This document tracks all work items, development milestones, current status, and
   - Updated initial HTML placeholders in [`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html) to show locked state placeholders prior to authentication.
   - **Dynamic Navigation Tab Protection:** Configured `#tab-btn-sync` to be hidden when not logged in to Salesforce, automatically rerouting any unauthenticated access to the live CRM explorer and displaying the sync tab only when an active Salesforce session is authenticated.
 
-### 2026-09-05
-- **Initialized project workspace & established `docs/` hub:** Created `work-progress.md`, `discussions-and-decisions.md`, `architecture.md`, and `setup-guide.md`.
-- **Configured LocalStack Community & MySQL:** Pinned `localstack/localstack:3.8` with `ACTIVATE_PRO=0`. Mapped MySQL to host port `3307`.
-- **Loaded Live Salesforce OAuth Credentials:** Re-created `integration-engine` with updated `.env` credentials.
-- **Removed `id` Scope:** Updated `SALESFORCE_SCOPES` to `api refresh_token offline_access`.
-- **Provided `redirect_uri_mismatch` Resolution:** Documented Callback URL troubleshooting steps.
-- **Implemented PKCE (RFC 7636) Extension:** Added cryptographic `code_verifier` generator, SHA-256 `code_challenge` (S256), state session management, and `code_verifier` payload parameter in token exchange endpoint.
-- **Implemented MySQL CRM Tables (Account, Contact, Opportunity):** Added SQLAlchemy models in [`src/integration-engine/app/database.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/database.py), updated [`src/scripts/init-mysql.sql`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/scripts/init-mysql.sql), integrated automated upsert pipeline in [`src/integration-engine/app/sync_service.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/sync_service.py), and added inspection endpoints in [`src/integration-engine/app/main.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/main.py).
-- **Removed Custom Users Table & Seed Users:** Removed `users` table and static seed records (`lead_developer`, `crm_administrator`). Replaced with 1:1 Live Salesforce authentication.
-- **Implemented Multi-Target Single Record Sync:** Implemented `POST /api/sync/record` to mirror individual Salesforce records to MySQL (`salesforce_accounts`/`contacts`/`opportunities`), DynamoDB (`SalesforceSyncRecords`), and S3 (`salesforce-raw-events`).
-- **Implemented Browser / Incognito Session Isolation & Strict Connection Enforcement:** Added `session_id` column, enforced strict session validation in `get_valid_token`, added 401 Unauthorized protection on all Salesforce API routes, and added client-side connection guards in [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js).
-- **Compiled Complete URL & API Endpoint Catalog:** Updated [`docs/setup-guide.md`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/docs/setup-guide.md) with comprehensive listings of all Web UI, Swagger/OpenAPI, REST API, MySQL, and LocalStack endpoints.
+| **Phase 12** | **Multi-Object NLP Search & openCypher Graph Engine** | 🟢 Complete | 2026-10-15 |
+| | - Created [`src/integration-engine/app/nlp_query_service.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/nlp_query_service.py) supporting all sObjects (`Account`, `Contact`, `Opportunity`, `Lead`) | 🟢 Complete | 2026-10-15 |
+| | - Multi-entity detection, job titles, deal stages, revenue thresholds, lead statuses, email/phone criteria | 🟢 Complete | 2026-10-15 |
+| | - Automated dual-engine query generation (Salesforce SOQL + openCypher for Neo4j / Neptune) | 🟢 Complete | 2026-10-15 |
+| | - Unified search in [`src/integration-engine/app/salesforce_client.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/salesforce_client.py) and [`src/integration-engine/app/main.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/main.py) with `context_sobject` | 🟢 Complete | 2026-10-15 |
+| | - Dynamic NLP prompt chips per sObject in [`src/dashboard-ui/index.html`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/index.html) and [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) | 🟢 Complete | 2026-10-15 |
+| | - Auto-switching entity selector when cross-object NLP queries are detected | 🟢 Complete | 2026-10-15 |
+| | - Rich multi-object table row rendering (Title/Email/Phone, StageName/Amount/Probability, Status/Company) | 🟢 Complete | 2026-10-15 |
+| | - Query Inspector modal with copyable SOQL & openCypher queries and real-time NLP interpretation notes | 🟢 Complete | 2026-10-15 |
+| | - Created query reference files: [`scripts/salesforce/cypher/account.cypher`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/cypher/account.cypher) and [`scripts/salesforce/soql/media_accounts.soql`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/soql/media_accounts.soql) | 🟢 Complete | 2026-10-15 |
+
+---
+
+## 📅 Daily Activity Log
+
+### 2026-10-15
+- **Multi-Object Natural Language (NLP) Search Engine:**
+  - Implemented [`src/integration-engine/app/nlp_query_service.py`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/integration-engine/app/nlp_query_service.py) supporting all primary Salesforce sObjects (`Account`, `Contact`, `Opportunity`, `Lead`).
+  - Implemented intelligent attribute extraction:
+    - **Contact:** Job titles (VP, Director, Manager, Executive, Engineer), email domains (Gmail), contact info presence, and media roles.
+    - **Opportunity:** Deal stages (`Closed Won`, `Closed Lost`, `Prospecting`), revenue/deal sizes (`> $50k`, `$100k+`), and active pipeline filtering.
+    - **Lead:** Lead statuses (`Qualified`, `Open - Not Contacted`), media industry leads, and contact criteria.
+    - **Account:** Media types (`Type = 'Media' OR Industry = 'Media'`), industry filters (`Technology`), annual revenue thresholds (`>= $1M`), and billing geography (`California`).
+  - Added bidirectional cross-object entity detection: queries explicitly naming an entity (e.g. "Closed Won deals" typed while on Account tab) automatically route to the correct target sObject.
+- **Dual-Engine Query Compilation (Salesforce SOQL + openCypher):**
+  - Integrated simultaneous compilation of Salesforce SOQL and openCypher (Neo4j / Memgraph / AWS Neptune) graph queries for every search.
+  - Saved reusable query files: [`scripts/salesforce/cypher/account.cypher`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/cypher/account.cypher), [`scripts/salesforce/soql/media_accounts.soql`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/soql/media_accounts.soql), and [`scripts/salesforce/soql/account.soql`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/scripts/salesforce/soql/account.soql).
+- **Dashboard UI Enhancements for Multi-Object NLP:**
+  - Added dynamic `renderNlpPromptChips(sobject)` in [`src/dashboard-ui/app.js`](file:///Volumes/MacDisk/Docker-Projects/docker-aws-cli/src/dashboard-ui/app.js) generating tailored prompt chips when switching between Account, Contact, Opportunity, and Lead.
+  - Configured automatic entity switching in the UI selector when an NLP query targets a different sObject.
+  - Enhanced table row rendering with customized details per object (Title/Email/Phone for Contacts, StageName/Amount/Probability for Opportunities, Status/Company for Leads) and colored status badges (`Media`, `Won`, `Qualified`).
+  - Connected the Query Inspector modal to display live compiled SOQL, openCypher, and human-readable NLP interpretation summaries.

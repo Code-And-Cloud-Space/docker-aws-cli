@@ -249,8 +249,97 @@ All data inspection and synchronization routes are wrapped with the `require_aut
 ├── scripts/
 │   └── salesforce/
 │       ├── apex/hello.apex     # Anonymous Apex execution scripts
-│       └── soql/account.soql   # Ad-hoc SOQL queries
+│       ├── cypher/account.cypher # OpenCypher graph queries for Media Accounts
+│       ├── soql/account.soql   # Ad-hoc SOQL queries (including Media search)
+│       └── soql/media_accounts.soql # Dedicated Media Account SOQL query
 ├── sfdx-project.json           # Salesforce DX project definition & sourceApiVersion
 └── .forceignore                # Salesforce metadata deployment exclusion rules
 ```
+
+---
+
+## 🔍 SOQL & OpenCypher Graph Query Architecture
+
+The platform supports multi-model data access patterns across both standard relational Salesforce CRM SOQL and Graph Databases (Neo4j, Memgraph, AWS Neptune openCypher):
+
+```
+┌──────────────────────────────────────────────┐
+│        Dashboard UI / User Query Intent      │
+│   "Search All Media Type of Account" Action  │
+└──────────────────────┬───────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────┐
+│  FastAPI Integration Engine (salesforce_client)│
+├──────────────────────────────────────────────┤
+│ 1. SOQL Builder:                             │
+│    SELECT Id, Name, Type, Industry ...       │
+│    WHERE Type = 'Media' OR Industry = 'Media'│
+│                                              │
+│ 2. OpenCypher Graph Translator (to_cypher):  │
+│    MATCH (a:Account)                         │
+│    WHERE a.Type = 'Media' ... RETURN a       │
+└──────────────┬───────────────────────────────┘
+               │
+      ┌────────┴────────┐
+      ▼                 ▼
+┌──────────────┐ ┌──────────────┐
+│ Live SF Org  │ │ Graph Engine │
+│ (REST SOQL)  │ │(Neo4j/Neptune)
+└──────────────┘ └──────────────┘
+```
+
+### Multi-Object Query Mapping Comparison:
+
+| **Entity** | **NLP Sample Intent** | **Salesforce SOQL** | **openCypher Graph Query** |
+| :--- | :--- | :--- | :--- |
+| **Account** | `"Search All Media Type of Account"` | `SELECT Id, Name, Type, Industry, AnnualRevenue, Phone, BillingCity, BillingCountry, CreatedDate, LastModifiedDate FROM Account WHERE (Type = 'Media' OR Industry = 'Media' OR Type LIKE '%Media%' OR Industry LIKE '%Media%' OR Name LIKE '%Media%') ORDER BY LastModifiedDate DESC LIMIT 50` | `MATCH (a:Account) WHERE (a.Type = 'Media' OR a.Industry = 'Media' OR toLower(a.Type) CONTAINS 'media' OR toLower(a.Industry) CONTAINS 'media' OR toLower(a.Name) CONTAINS 'media') RETURN a.Id, a.Name, a.Type, a.Industry, a.AnnualRevenue, a.Phone ... ORDER BY a.LastModifiedDate DESC LIMIT 50` |
+| **Contact** | `"Contacts with VP or Director title"` | `SELECT Id, FirstName, LastName, Email, Title, AccountId, Phone, CreatedDate, LastModifiedDate FROM Contact WHERE (Title LIKE '%VP%' OR Title LIKE '%Vice President%' OR Title LIKE '%Director%') ORDER BY LastModifiedDate DESC LIMIT 50` | `MATCH (c:Contact) WHERE (toLower(c.Title) CONTAINS 'vp' OR toLower(c.Title) CONTAINS 'director') RETURN c.Id, c.FirstName, c.LastName, c.Email, c.Title, c.AccountId, c.Phone ... ORDER BY c.LastModifiedDate DESC LIMIT 50` |
+| **Opportunity** | `"Closed Won deals > $50k"` | `SELECT Id, Name, StageName, Amount, CloseDate, Probability, AccountId, CreatedDate, LastModifiedDate FROM Opportunity WHERE StageName = 'Closed Won' AND Amount >= 50000 ORDER BY LastModifiedDate DESC LIMIT 50` | `MATCH (o:Opportunity) WHERE o.StageName = 'Closed Won' AND o.Amount >= 50000 RETURN o.Id, o.Name, o.StageName, o.Amount, o.CloseDate, o.Probability ... ORDER BY o.LastModifiedDate DESC LIMIT 50` |
+| **Lead** | `"Qualified leads with email"` | `SELECT Id, FirstName, LastName, Company, Email, Status, Phone, CreatedDate, LastModifiedDate FROM Lead WHERE Status LIKE '%Qualified%' AND (Email != null AND Email LIKE '%@%') ORDER BY LastModifiedDate DESC LIMIT 50` | `MATCH (l:Lead) WHERE toLower(l.Status) CONTAINS 'qualified' AND l.Email IS NOT NULL RETURN l.Id, l.FirstName, l.LastName, l.Company, l.Email, l.Status ... ORDER BY l.LastModifiedDate DESC LIMIT 50` |
+
+---
+
+## 🧠 Universal Multi-Object Natural Language Processing (NLP) Engine
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                      Natural Language User Prompts                     │
+│  "Search All Media Type of Account"   |  "Contacts with VP title"      │
+│  "Closed Won deals > $50k"            |  "Qualified leads in Media"    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│            src/integration-engine/app/nlp_query_service.py             │
+├────────────────────────────────────────────────────────────────────────┤
+│ 1. Entity Classifier:                                                  │
+│    - Account: "account", "company", "clients", "organizations"         │
+│    - Contact: "contact", "people", "persons", "executives", "directors"│
+│    - Opportunity: "opportunity", "deals", "pipeline", "closed won"     │
+│    - Lead: "lead", "prospects", "inquiries"                            │
+│    (Auto-detects target sObject or falls back to active context)       │
+│                                                                        │
+│ 2. Semantic Attribute & Clause Extraction:                             │
+│    - Job Titles: VP, Vice President, Director, Manager, Executive      │
+│    - Stages: Closed Won, Closed Lost, Prospecting, Pipeline            │
+│    - Financial: Amounts ($50k, 100k+), AnnualRevenue (>= $1M)          │
+│    - Status: Qualified, Open - Not Contacted, Working                  │
+│    - Media: Type/Industry='Media', Title/Company LIKE '%Media%'        │
+│                                                                        │
+│ 3. Multi-Target Query Compilation:                                     │
+│    - Salesforce SOQL Generator (Exact sObject fields & filters)        │
+│    - openCypher Graph Query Generator (Neo4j, Memgraph, Neptune)       │
+│    - Human-Readable Interpretation Summary                             │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                  ┌─────────────────┴─────────────────┐
+                  ▼                                   ▼
+        ┌──────────────────┐                ┌──────────────────┐
+        │  Salesforce CRM  │                │ Graph DB / Cypher│
+        │  (Live SOQL API) │                │ (Neo4j / Neptune)│
+        └──────────────────┘                └──────────────────┘
+```
+
+
 

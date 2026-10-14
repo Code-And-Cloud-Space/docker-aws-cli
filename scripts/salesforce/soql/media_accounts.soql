@@ -1,0 +1,6 @@
+// Search All Media Type of Account (SOQL)
+// Finds all Accounts in Salesforce where Type or Industry is Media
+SELECT Id, Name, Type, Industry, Rating, Phone, AnnualRevenue, BillingCity, BillingState, CreatedDate, LastModifiedDate
+FROM Account
+WHERE Type = 'Media' OR Industry = 'Media' OR Type LIKE '%Media%' OR Industry LIKE '%Media%' OR Name LIKE '%Media%'
+ORDER BY LastModifiedDate DESC
