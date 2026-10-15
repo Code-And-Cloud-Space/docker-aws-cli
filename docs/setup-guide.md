@@ -278,11 +278,11 @@ curl -s -X POST "http://localhost:8000/api/salesforce/nlp-query" \
   -H "X-Session-ID: <session_id>" \
   -d '{"query": "Search All Media Type of Account", "limit": 50}'
 
-# 2. Contact Search
+# 2. Contact Search (with Account Relationship Resolution)
 curl -s -X POST "http://localhost:8000/api/salesforce/nlp-query" \
   -H "Content-Type: application/json" \
   -H "X-Session-ID: <session_id>" \
-  -d '{"query": "Contacts with VP or Director title", "limit": 50}'
+  -d '{"query": "Get Global Media person", "limit": 50}'
 
 # 3. Opportunity Search
 curl -s -X POST "http://localhost:8000/api/salesforce/nlp-query" \
@@ -299,7 +299,7 @@ curl -s -X POST "http://localhost:8000/api/salesforce/nlp-query" \
 
 ---
 
-## 🎬 Testing Multi-Object NLP Queries in UI
+## 🎬 Testing Multi-Object NLP & Internal Local LLM in UI
 
 1. Open the UI at `http://localhost:3000`.
 2. Connect your Live Salesforce Org using **"Connect Live Salesforce"**.
@@ -308,19 +308,81 @@ curl -s -X POST "http://localhost:8000/api/salesforce/nlp-query" \
      - Select **Accounts** in the dropdown.
      - Click **"Search All Media Type of Account"** or click chips like `"Get all accounts with media type"` or `"High revenue accounts ($1M+)"`.
      - Displays Media accounts with purple badges (`Media`) and revenue details.
-   - **Contact NLP Queries:**
-     - Select **Contacts** or type `"Contacts with VP or Director title"`.
-     - The dropdown auto-switches to Contacts and loads executives with Title, Email, and Phone details.
+   - **Contact NLP Queries (with Parent Account & Cross-Field Media Resolution):**
+     - Select **Contacts** or click `"Get Global Media person"` or `"media related person"`.
+     - When clicking `"media related person"`:
+       - The engine executes cross-field evaluation: `Account.Name LIKE '%Media%' OR Account.Type = 'Media' OR Account.Industry = 'Media' OR Title LIKE '%Media%' OR FirstName LIKE '%Media%' OR LastName LIKE '%Media%' OR Email LIKE '%media%'`.
+       - Matches all contacts with media in their name, title, or parent company (e.g. Vikas Kumar Tank @ ABP News, Jon Amos @ Global Media).
+     - When clicking `"Get Global Media person"`:
+       - Matches contacts where `Account.Name = 'Global Media'`.
+       - Displays `Acct: <Account.Name>` in purple bold text in each contact row.
    - **Opportunity NLP Queries:**
-     - Select **Opportunities** or type `"Closed Won deals > $50k"`.
-     - Displays won deals with emerald badges (`Won`), Stage, Amount, and Probability.
-   - **Lead NLP Queries:**
-     - Select **Leads** or type `"Qualified leads in Media"`.
-     - Displays qualified leads with emerald badges (`Qualified`), Status, Company, and Email.
-   - **Cross-Object Auto-Switching:**
-     - Type any query targeting another object (e.g. typing `"Closed Won opportunities"` while on the Account tab) and press Enter or click **Run NLP**. The UI automatically switches to the detected object and renders its records.
-   - **Query Inspector:**
-     - Click **"Queries"** in the toolbar to inspect the exact generated **Salesforce SOQL** and **openCypher Graph Query** (compatible with Neo4j and AWS Neptune), alongside the NLP interpretation summary.
+     - Select **Opportunities** or click `"Opportunity of Media"`.
+     - When clicking `"Opportunity of Media"`:
+       - The engine evaluates parent accounts (`Account.Name LIKE '%Media%' OR Account.Type = 'Media' OR Account.Industry = 'Media'`) and opportunity titles (`Name LIKE '%Media%'`).
+       - Loads matching opportunities (e.g., `salesforce.com - 5000 Widgets`, `salesforce.com - 500 Widgets`, `Global Media - 400 Widgets`).
+     - Or click `"Closed Won opportunities"` to view won deals.
+
+---
+
+## 🧪 Testing the Decoupled Standalone LLM Engine (`src/llm_engine`)
+
+You can execute the internal neural LLM engine and full verification suite directly from the command line inside the Python virtual environment (`.venv`):
+
+```bash
+# 1. Activate project virtual environment
+source .venv/bin/activate
+
+# 2. Run standalone LLM benchmark suite (100% in-process, < 1ms)
+PYTHONPATH=src python3 src/llm_engine/benchmark.py
+```
+
+### Direct Python Invocation:
+```bash
+python3 -c "
+import sys
+sys.path.insert(0, 'src')
+from llm_engine import internal_llm
+
+queries = [
+    'open pipeline',
+    'open deals',
+    'active account',
+    'company',
+    'Search All Media Type of Account',
+    'Get Global Media person',
+    'media related person',
+    'Opportunity of Media',
+    'open lead',
+    'Closed Won deals > 50000',
+    'Qualified leads in Media'
+]
+
+for q in queries:
+    res = internal_llm.generate_query(q)
+    print(f'=== Query: {q} ===')
+    print(f'Target:  {res["sobject"]}')
+    print(f'SOQL:    {res["soql"]}')
+    print(f'Cypher:  {res["cypher"]}')
+    print(f'Latency: {res["llm_telemetry"]["inference_time_ms"]} ms | Confidence: {res["llm_telemetry"]["confidence_score"]}')
+    print()
+"
+```
+
+### Inspect or Test Autonomous Web Learner
+```bash
+python3 -c "
+import sys
+sys.path.insert(0, 'src')
+from llm_engine import internal_llm, crm_dictionary
+
+# Query an unknown term to trigger web learning & persistence
+res = internal_llm.generate_query('show all agencies')
+print('Learned entries in dictionary:', list(crm_dictionary.data.get('learned_terms', {}).keys()))
+"
+```
+
+
 
 
 

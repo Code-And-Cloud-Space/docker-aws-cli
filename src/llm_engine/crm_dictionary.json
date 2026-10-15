@@ -1,0 +1,242 @@
+{
+  "version": "2.0.0",
+  "description": "CRM Semantic Ontology & Knowledge Base for Neural NLP Resolver",
+  "entities": {
+    "Account": {
+      "synonyms": [
+        "account",
+        "accounts",
+        "company",
+        "companies",
+        "firm",
+        "firms",
+        "business",
+        "businesses",
+        "organization",
+        "organizations",
+        "org",
+        "orgs",
+        "client",
+        "clients",
+        "enterprise",
+        "enterprises",
+        "vendor",
+        "vendors",
+        "partner",
+        "partners",
+        "corporation"
+      ],
+      "description": "Business organizations, client companies, and partner accounts."
+    },
+    "Opportunity": {
+      "synonyms": [
+        "opportunity",
+        "opportunities",
+        "deal",
+        "deals",
+        "opp",
+        "opps",
+        "pipeline",
+        "pipelines",
+        "sale",
+        "sales",
+        "revenue deal",
+        "revenue deals",
+        "potential business",
+        "bid",
+        "bids"
+      ],
+      "description": "Sales deals, revenue opportunities, and active pipeline transactions."
+    },
+    "Contact": {
+      "synonyms": [
+        "contact",
+        "contacts",
+        "person",
+        "people",
+        "individual",
+        "individuals",
+        "employee",
+        "employees",
+        "staff",
+        "stakeholder",
+        "stakeholders",
+        "exec",
+        "executive",
+        "executives",
+        "rep",
+        "reps",
+        "point of contact"
+      ],
+      "description": "Individuals and people associated with accounts and opportunities."
+    },
+    "Lead": {
+      "synonyms": [
+        "lead",
+        "leads",
+        "prospect",
+        "prospects",
+        "inquiry",
+        "inquiries",
+        "suspect",
+        "suspects",
+        "inbound"
+      ],
+      "description": "Unqualified prospects, potential leads, and inbound inquiries."
+    }
+  },
+  "lifecycle_terms": {
+    "Opportunity": {
+      "open_pipeline": {
+        "synonyms": [
+          "open",
+          "open deal",
+          "open deals",
+          "open pipeline",
+          "pipeline",
+          "active deal",
+          "active deals",
+          "active pipeline",
+          "in progress",
+          "unclosed",
+          "current pipeline"
+        ],
+        "target_field": "IsClosed",
+        "semantic_value": false,
+        "concept": "active_open_pipeline",
+        "description": "Deals in active pipeline that are not closed"
+      },
+      "closed_won": {
+        "synonyms": [
+          "won",
+          "won deal",
+          "won deals",
+          "closed won",
+          "closed-won",
+          "successful deal",
+          "closed won deals"
+        ],
+        "target_field": "StageName",
+        "semantic_value": "Closed Won",
+        "concept": "closed_won",
+        "description": "Opportunities successfully closed and won"
+      },
+      "closed_lost": {
+        "synonyms": [
+          "lost",
+          "lost deal",
+          "lost deals",
+          "closed lost",
+          "closed-lost",
+          "dead deal",
+          "dead deals"
+        ],
+        "target_field": "StageName",
+        "semantic_value": "Closed Lost",
+        "concept": "closed_lost",
+        "description": "Opportunities closed and lost"
+      }
+    },
+    "Account": {
+      "active_accounts": {
+        "synonyms": [
+          "active",
+          "active account",
+          "active accounts",
+          "active company",
+          "active companies",
+          "current client",
+          "current clients",
+          "active business",
+          "active businesses"
+        ],
+        "target_field": "Type",
+        "semantic_value": ["Customer", "Prospect", "Active"],
+        "concept": "active_customer_or_prospect",
+        "description": "Accounts active as paying customers or active prospects"
+      },
+      "customers": {
+        "synonyms": [
+          "customer",
+          "customers",
+          "client account",
+          "client accounts",
+          "paying client"
+        ],
+        "target_field": "Type",
+        "semantic_value": "Customer",
+        "concept": "customer_account",
+        "description": "Customer accounts"
+      },
+      "prospects": {
+        "synonyms": [
+          "prospect account",
+          "prospect accounts",
+          "prospective company"
+        ],
+        "target_field": "Type",
+        "semantic_value": "Prospect",
+        "concept": "prospect_account",
+        "description": "Prospect accounts"
+      }
+    },
+    "Lead": {
+      "open_leads": {
+        "synonyms": [
+          "open",
+          "open lead",
+          "open leads",
+          "new lead",
+          "new leads",
+          "uncontacted",
+          "not contacted",
+          "open - not contacted"
+        ],
+        "target_field": "Status",
+        "semantic_value": "Open",
+        "concept": "open_uncontacted",
+        "description": "Open uncontacted leads"
+      },
+      "contacted_leads": {
+        "synonyms": [
+          "working",
+          "working lead",
+          "contacted",
+          "contacted lead",
+          "in progress lead"
+        ],
+        "target_field": "Status",
+        "semantic_value": ["Contacted", "Working"],
+        "concept": "working_contacted",
+        "description": "Working and contacted leads"
+      },
+      "qualified_leads": {
+        "synonyms": [
+          "qualified",
+          "qualified lead",
+          "qualified leads",
+          "converted",
+          "sales ready"
+        ],
+        "target_field": "Status",
+        "semantic_value": ["Qualified", "Converted"],
+        "concept": "qualified_converted",
+        "description": "Qualified and converted leads"
+      },
+      "unqualified_leads": {
+        "synonyms": [
+          "unqualified",
+          "unqualified lead",
+          "closed lead",
+          "lost lead",
+          "disqualified"
+        ],
+        "target_field": "Status",
+        "semantic_value": ["Unqualified", "Closed"],
+        "concept": "unqualified_closed",
+        "description": "Unqualified and closed leads"
+      }
+    }
+  },
+  "learned_terms": {}
+}

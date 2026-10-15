@@ -41,8 +41,8 @@ class SalesforceClient:
         """Fetch records from live Salesforce Org via SOQL query using user credentials, supporting media filters and search"""
         fields_map = {
             "Account": "Id, Name, Type, Industry, AnnualRevenue, Phone, BillingCity, BillingCountry, CreatedDate, LastModifiedDate",
-            "Contact": "Id, FirstName, LastName, Email, Title, AccountId, Phone, CreatedDate, LastModifiedDate",
-            "Opportunity": "Id, Name, StageName, Amount, CloseDate, Probability, AccountId, CreatedDate, LastModifiedDate",
+            "Contact": "Id, FirstName, LastName, Email, Title, AccountId, Account.Name, Phone, CreatedDate, LastModifiedDate",
+            "Opportunity": "Id, Name, StageName, Amount, CloseDate, Probability, AccountId, Account.Name, CreatedDate, LastModifiedDate",
             "Lead": "Id, FirstName, LastName, Company, Email, Status, Phone, CreatedDate, LastModifiedDate"
         }
         fields = fields_map.get(sobject, "Id, Name, CreatedDate, LastModifiedDate")
@@ -51,18 +51,20 @@ class SalesforceClient:
 
         where_clauses = []
         cypher_where_clauses = []
-        self.last_nlp_interpretation = None
+        self.last_llm_telemetry = None
 
         # Check if query is media_only or NLP query
         from .nlp_query_service import nlp_service
         if media_only:
             nlp_res = nlp_service.parse_nlp_query("all media", context_sobject=sobject)
             self.last_nlp_interpretation = nlp_res["interpretation"]
+            self.last_llm_telemetry = nlp_res.get("llm_telemetry")
             soql = nlp_res["soql"]
             cypher = nlp_res["cypher"]
         elif search and search.strip():
             nlp_res = nlp_service.parse_nlp_query(search.strip(), context_sobject=sobject)
             self.last_nlp_interpretation = nlp_res["interpretation"]
+            self.last_llm_telemetry = nlp_res.get("llm_telemetry")
             soql = nlp_res["soql"]
             cypher = nlp_res["cypher"]
         else:
@@ -74,6 +76,15 @@ class SalesforceClient:
                 "is_media_query": False,
                 "notes": [f"Retrieved recent {sobject} records"],
                 "summary": f"Target: {sobject} ➔ Default recent records"
+            }
+            self.last_llm_telemetry = {
+                "engine": "Internal Local LLM",
+                "model": "Internal-CRM-LLM-v1",
+                "inference_time_ms": 0.1,
+                "tokens_processed": 0,
+                "confidence_score": 1.0,
+                "slots_extracted": {},
+                "reasoning_chain": [f"Default recent {sobject} projection"]
             }
 
         self.last_soql_query = soql

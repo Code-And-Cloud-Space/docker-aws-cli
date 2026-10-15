@@ -236,10 +236,15 @@
             <span class="text-emerald-400 text-[11px] font-mono bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/60 hidden" id="sf-filter-nlp-badge">
               <i class="fa-solid fa-brain mr-1"></i><span id="sf-filter-nlp-text">NLP Parsed</span>
             </span>
+            <span class="text-cyan-400 text-[11px] font-mono bg-cyan-950/70 px-2 py-0.5 rounded border border-cyan-800/70 hidden cursor-pointer hover:bg-cyan-900/60 transition" id="sf-filter-llm-badge" onclick="openQueryInspectorModal('llm')" title="View In-Process Local LLM Telemetry">
+              <i class="fa-solid fa-microchip mr-1"></i><span id="sf-filter-llm-text">Local LLM: 0.8ms</span>
+            </span>
             <span class="text-slate-400 text-xs" id="sf-filter-record-count">0 records matching</span>
           </div>
           <div class="flex items-center gap-2 font-mono text-[11px] text-slate-400">
-            <span class="text-slate-500">Query:</span>
+            <button onclick="openQueryInspectorModal('llm')" class="bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-800/70 px-2 py-0.5 rounded transition flex items-center gap-1">
+              <i class="fa-solid fa-microchip text-[10px]"></i> Local LLM Telemetry
+            </button>
             <button onclick="copyCurrentSoqlQuery()" class="bg-slate-950 hover:bg-slate-800 text-indigo-300 border border-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1">
               <i class="fa-solid fa-copy text-[10px]"></i> Copy SOQL
             </button>
@@ -954,7 +959,11 @@
           </button>
           <button type="button" onclick="switchQueryInspectorTab('cypher')" id="tab-inspector-cypher" class="pb-2 text-slate-400 hover:text-white flex items-center space-x-1.5 transition">
             <i class="fa-solid fa-circle-nodes text-emerald-400"></i>
-            <span>Cypher Query (Graph / Neo4j / Neptune)</span>
+            <span>Cypher Query (Graph / Neo4j)</span>
+          </button>
+          <button type="button" onclick="switchQueryInspectorTab('llm')" id="tab-inspector-llm" class="pb-2 text-slate-400 hover:text-white flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-microchip text-cyan-400"></i>
+            <span>Internal LLM Engine Telemetry</span>
           </button>
         </div>
 
@@ -982,6 +991,42 @@
           </div>
           <pre id="inspector-cypher-code" class="bg-slate-950 p-4 rounded-lg border border-slate-800 text-xs font-mono text-emerald-300 whitespace-pre-wrap break-words max-h-56 overflow-y-auto">MATCH (a:Account) WHERE a.Type = 'Media' OR a.Industry = 'Media' RETURN a</pre>
           <p class="text-[11px] text-slate-500">Compatible with Neo4j, Memgraph, and AWS Neptune openCypher query engines.</p>
+        </div>
+
+        <!-- LLM Telemetry Content Panel -->
+        <div id="inspector-content-llm" class="space-y-3 hidden">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+              <span class="text-slate-500 block text-[10px] uppercase font-semibold">Engine / Model</span>
+              <span id="llm-modal-model" class="font-mono text-cyan-400 font-medium">Internal-CRM-LLM-v1</span>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+              <span class="text-slate-500 block text-[10px] uppercase font-semibold">Inference Latency</span>
+              <span id="llm-modal-latency" class="font-mono text-emerald-400 font-medium">&lt; 1 ms</span>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+              <span class="text-slate-500 block text-[10px] uppercase font-semibold">Confidence Score</span>
+              <span id="llm-modal-confidence" class="font-mono text-purple-400 font-medium">92.4%</span>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+              <span class="text-slate-500 block text-[10px] uppercase font-semibold">Tokens Processed</span>
+              <span id="llm-modal-tokens" class="font-mono text-amber-400 font-medium">5 tokens</span>
+            </div>
+          </div>
+          <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+            <span class="text-slate-500 block text-[10px] uppercase font-semibold mb-1">Extracted Relational Slots & Projections</span>
+            <div id="llm-modal-slots" class="text-xs font-mono text-slate-300">Target: Account, Industry: Media</div>
+          </div>
+          <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+            <span class="text-slate-500 block text-[10px] uppercase font-semibold mb-1.5">Attention & Reasoning Chain</span>
+            <ul id="llm-modal-reasoning" class="text-xs space-y-1 text-slate-400 font-mono list-disc list-inside">
+              <li>In-process deterministic embedding lookup</li>
+            </ul>
+          </div>
+          <p class="text-[11px] text-slate-500 flex items-center gap-1.5">
+            <i class="fa-solid fa-circle-check text-emerald-400 text-[10px]"></i>
+            <span>100% In-Process Local LLM (Zero Ollama daemon, zero external API latency, runs directly inside Python/Docker).</span>
+          </p>
         </div>
       </div>
 

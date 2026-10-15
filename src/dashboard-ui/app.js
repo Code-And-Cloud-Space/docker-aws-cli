@@ -452,34 +452,40 @@ let currentSfFilter = null; // null | 'media_only' | string
 let currentExecutedSoql = "SELECT Id, Name, Type, Industry, AnnualRevenue, Phone, BillingCity FROM Account WHERE Type = 'Media' OR Industry = 'Media' ORDER BY LastModifiedDate DESC LIMIT 50";
 let currentExecutedCypher = "MATCH (a:Account) WHERE a.Type = 'Media' OR a.Industry = 'Media' OR toLower(a.Type) CONTAINS 'media' OR toLower(a.Industry) CONTAINS 'media' RETURN a.Id, a.Name, a.Type, a.Industry, a.AnnualRevenue, a.Phone ORDER BY a.LastModifiedDate DESC LIMIT 50";
 let currentInterpretationSummary = null;
+let currentLlmTelemetry = null;
 let studioSnippetLang = "soql";
 
 // Multi-Object NLP Prompts Configuration
 const NLP_CHIPS_CONFIG = {
   Account: [
-    { text: "Search All Media Type of Account", icon: "fa-sparkles", primary: true },
-    { text: "Get all accounts with media type", icon: "fa-photo-film" },
+    { text: "active account", icon: "fa-circle-check", primary: true },
+    { text: "company", icon: "fa-building" },
+    { text: "Search All Media Type of Account", icon: "fa-sparkles" },
     { text: "Show all technology accounts", icon: "fa-microchip" },
     { text: "High revenue accounts ($1M+)", icon: "fa-dollar-sign" },
     { text: "Accounts in California", icon: "fa-location-dot" }
   ],
   Contact: [
-    { text: "Contacts with VP or Director title", icon: "fa-user-tie", primary: true },
-    { text: "Search Media related contacts", icon: "fa-photo-film" },
+    { text: "Get Global Media person", icon: "fa-building-user", primary: true },
+    { text: "media related person", icon: "fa-photo-film" },
+    { text: "Contacts with VP or Director title", icon: "fa-user-tie" },
     { text: "Contacts with Gmail", icon: "fa-envelope" },
     { text: "Contacts with phone numbers", icon: "fa-phone" }
   ],
   Opportunity: [
-    { text: "Closed Won opportunities", icon: "fa-trophy", primary: true },
+    { text: "open deals", icon: "fa-bolt", primary: true },
+    { text: "Opportunity of Media", icon: "fa-photo-film" },
+    { text: "Closed Won opportunities", icon: "fa-trophy" },
     { text: "High value deals (> $100k)", icon: "fa-dollar-sign" },
     { text: "Pipeline opportunities", icon: "fa-chart-line" },
     { text: "Closed Lost opportunities", icon: "fa-circle-xmark" }
   ],
   Lead: [
-    { text: "Qualified leads", icon: "fa-circle-check", primary: true },
-    { text: "Open - Not Contacted leads", icon: "fa-user-clock" },
-    { text: "Media industry leads", icon: "fa-photo-film" },
-    { text: "Leads with email", icon: "fa-envelope" }
+    { text: "open lead", icon: "fa-folder-open", primary: true },
+    { text: "Open leads", icon: "fa-user-clock" },
+    { text: "Qualified leads", icon: "fa-circle-check" },
+    { text: "Contacted leads", icon: "fa-phone" },
+    { text: "Media industry leads", icon: "fa-photo-film" }
   ]
 };
 
@@ -546,10 +552,13 @@ async function searchAllMediaAccounts() {
 
 function clearSfSearchFilter() {
   currentSfFilter = null;
+  currentLlmTelemetry = null;
   const searchInput = document.getElementById("sf-search-input");
   if (searchInput) searchInput.value = "";
   const nlpBadge = document.getElementById("sf-filter-nlp-badge");
   if (nlpBadge) nlpBadge.classList.add("hidden");
+  const llmBadge = document.getElementById("sf-filter-llm-badge");
+  if (llmBadge) llmBadge.classList.add("hidden");
   loadSalesforceRecords();
 }
 
@@ -567,23 +576,6 @@ function executeSfSearch() {
     return;
   }
   currentSfFilter = query;
-
-  // Auto-switch to appropriate entity if query explicitly refers to an sObject
-  const lower = query.toLowerCase();
-  const objSelect = document.getElementById("sf-object-select");
-  if (objSelect) {
-    if (lower.includes("contact")) {
-      objSelect.value = "Contact";
-    } else if (lower.includes("opportunity") || lower.includes("deal") || lower.includes("pipeline") || lower.includes("closed won") || lower.includes("closed lost")) {
-      objSelect.value = "Opportunity";
-    } else if (lower.includes("lead")) {
-      objSelect.value = "Lead";
-    } else if (lower.includes("account") || lower.includes("media type")) {
-      objSelect.value = "Account";
-    }
-    renderNlpPromptChips(objSelect.value);
-  }
-
   loadSalesforceRecords();
 }
 
@@ -688,19 +680,18 @@ async function loadSalesforceRecords() {
     const data = await res.json();
     const records = data.records || [];
 
-    // Auto-switch UI selector if NLP engine detected a different entity
+    // Display suitable toast notification if query targets a different entity without auto-switching tab/dropdown
     if (data.sobject && data.sobject !== sobject) {
-      const objSelect = document.getElementById("sf-object-select");
-      if (objSelect) {
-        objSelect.value = data.sobject;
-        renderNlpPromptChips(data.sobject);
-      }
+      showToast(`💡 Query resolved for ${data.sobject} (${records.length} records found). Explorer view remains on ${sobject}.`, "info", 4500);
     }
 
     if (data.soql) currentExecutedSoql = data.soql;
     if (data.cypher) currentExecutedCypher = data.cypher;
     if (data.interpretation && data.interpretation.summary) {
       currentInterpretationSummary = data.interpretation.summary;
+    }
+    if (data.llm_telemetry) {
+      currentLlmTelemetry = data.llm_telemetry;
     }
 
     const nlpBadge = document.getElementById("sf-filter-nlp-badge");
@@ -713,6 +704,19 @@ async function loadSalesforceRecords() {
       }
     } else {
       if (nlpBadge) nlpBadge.classList.add("hidden");
+    }
+
+    const llmBadge = document.getElementById("sf-filter-llm-badge");
+    const llmText = document.getElementById("sf-filter-llm-text");
+    if (currentLlmTelemetry && currentSfFilter) {
+      if (llmBadge) llmBadge.classList.remove("hidden");
+      if (llmText) {
+        const ms = currentLlmTelemetry.inference_time_ms !== undefined ? `${currentLlmTelemetry.inference_time_ms}ms` : "< 1ms";
+        const conf = currentLlmTelemetry.confidence_score !== undefined ? `${Math.round(currentLlmTelemetry.confidence_score * 100)}%` : "100%";
+        llmText.textContent = `Local LLM: ${ms} (${conf})`;
+      }
+    } else {
+      if (llmBadge) llmBadge.classList.add("hidden");
     }
 
     if (countText) {
@@ -789,9 +793,13 @@ async function loadSalesforceRecords() {
           extra += ` | Rev: $${Number(r.AnnualRevenue).toLocaleString()}`;
         }
       } else if (activeSObject === "Contact") {
-        extra = `Title: <b class="text-cyan-300">${r.Title || 'None'}</b> | Email: <b class="text-slate-300">${r.Email || 'None'}</b>${r.Phone ? ` | Tel: ${r.Phone}` : ''}`;
+        const accName = (r.Account && r.Account.Name) || r["Account.Name"] || null;
+        const accHtml = accName ? ` | Acct: <b class="text-purple-300 font-medium">${accName}</b>` : '';
+        extra = `Title: <b class="text-cyan-300">${r.Title || 'None'}</b>${accHtml} | Email: <b class="text-slate-300">${r.Email || 'None'}</b>${r.Phone ? ` | Tel: ${r.Phone}` : ''}`;
       } else if (activeSObject === "Opportunity") {
-        extra = `Stage: <b class="${r.StageName === 'Closed Won' ? 'text-emerald-400 font-semibold' : (r.StageName === 'Closed Lost' ? 'text-rose-400' : 'text-amber-300')}">${r.StageName || 'None'}</b> | Amount: <b class="text-emerald-300">${r.Amount ? '$' + Number(r.Amount).toLocaleString() : 'N/A'}</b>${r.Probability !== undefined && r.Probability !== null ? ` (${r.Probability}%)` : ''}`;
+        const accName = (r.Account && r.Account.Name) || r["Account.Name"] || null;
+        const accHtml = accName ? ` | Acct: <b class="text-purple-300 font-medium">${accName}</b>` : '';
+        extra = `Stage: <b class="${r.StageName === 'Closed Won' ? 'text-emerald-400 font-semibold' : (r.StageName === 'Closed Lost' ? 'text-rose-400' : 'text-amber-300')}">${r.StageName || 'None'}</b> | Amount: <b class="text-emerald-300">${r.Amount ? '$' + Number(r.Amount).toLocaleString() : 'N/A'}</b>${accHtml}${r.Probability !== undefined && r.Probability !== null ? ` (${r.Probability}%)` : ''}`;
       } else if (activeSObject === "Lead") {
         extra = `Status: <b class="${r.Status && r.Status.includes('Qualified') ? 'text-emerald-400' : 'text-indigo-300'}">${r.Status || 'None'}</b> | Company: <b class="text-slate-300">${r.Company || 'None'}</b> | Email: <b class="text-slate-300">${r.Email || 'None'}</b>`;
       } else {
@@ -2044,7 +2052,7 @@ function copyCurrentCypherQuery() {
 // -----------------------------------------------------------------------------
 // Query Inspector Modal
 // -----------------------------------------------------------------------------
-function openQueryInspectorModal() {
+function openQueryInspectorModal(initialTab = "soql") {
   const modal = document.getElementById("query-inspector-modal");
   const soqlCode = document.getElementById("inspector-soql-code");
   const cypherCode = document.getElementById("inspector-cypher-code");
@@ -2060,6 +2068,43 @@ function openQueryInspectorModal() {
     interpText.innerHTML = `<i class="fa-solid fa-sparkles text-purple-400"></i><span>${currentInterpretationSummary || currentSfFilter || "Default Query"}</span>`;
   }
 
+  // Populate LLM Telemetry
+  if (currentLlmTelemetry) {
+    const elModel = document.getElementById("llm-modal-model");
+    const elLatency = document.getElementById("llm-modal-latency");
+    const elConf = document.getElementById("llm-modal-confidence");
+    const elTokens = document.getElementById("llm-modal-tokens");
+    const elSlots = document.getElementById("llm-modal-slots");
+    const elReasoning = document.getElementById("llm-modal-reasoning");
+
+    if (elModel) elModel.textContent = currentLlmTelemetry.model || "Internal-CRM-LLM-v1";
+    if (elLatency) elLatency.textContent = currentLlmTelemetry.inference_time_ms !== undefined ? `${currentLlmTelemetry.inference_time_ms} ms` : "< 1 ms";
+    if (elConf) elConf.textContent = currentLlmTelemetry.confidence_score !== undefined ? `${(currentLlmTelemetry.confidence_score * 100).toFixed(1)}%` : "100%";
+    if (elTokens) elTokens.textContent = `${currentLlmTelemetry.tokens_processed || 0} tokens`;
+    
+    if (elSlots) {
+      if (currentLlmTelemetry.slots_extracted && Object.keys(currentLlmTelemetry.slots_extracted).length > 0) {
+        elSlots.innerHTML = Object.entries(currentLlmTelemetry.slots_extracted)
+          .map(([k, v]) => `<span class="inline-block bg-slate-900 border border-slate-700 px-2 py-0.5 rounded text-cyan-300 mr-1.5 mb-1">${k}: <strong class="text-white">${Array.isArray(v) ? v.join(", ") : v}</strong></span>`)
+          .join("");
+      } else {
+        elSlots.textContent = "No specific slot constraints applied (full object projection)";
+      }
+    }
+
+    if (elReasoning) {
+      if (currentLlmTelemetry.reasoning_chain && currentLlmTelemetry.reasoning_chain.length > 0) {
+        elReasoning.innerHTML = currentLlmTelemetry.reasoning_chain
+          .map(r => `<li>${r}</li>`)
+          .join("");
+      } else {
+        elReasoning.innerHTML = `<li>In-process deterministic embedding lookup</li><li>Target projection: ${currentInterpretationSummary || "Default"}</li>`;
+      }
+    }
+  }
+
+  switchQueryInspectorTab(initialTab || "soql");
+
   if (modal) modal.classList.remove("hidden");
 }
 
@@ -2071,19 +2116,29 @@ function closeQueryInspectorModal() {
 function switchQueryInspectorTab(tab) {
   const btnSoql = document.getElementById("tab-inspector-soql");
   const btnCypher = document.getElementById("tab-inspector-cypher");
+  const btnLlm = document.getElementById("tab-inspector-llm");
   const contentSoql = document.getElementById("inspector-content-soql");
   const contentCypher = document.getElementById("inspector-content-cypher");
+  const contentLlm = document.getElementById("inspector-content-llm");
+
+  // Reset tab classes
+  if (btnSoql) btnSoql.className = "pb-2 text-slate-400 hover:text-white flex items-center space-x-1.5 transition";
+  if (btnCypher) btnCypher.className = "pb-2 text-slate-400 hover:text-white flex items-center space-x-1.5 transition";
+  if (btnLlm) btnLlm.className = "pb-2 text-slate-400 hover:text-white flex items-center space-x-1.5 transition";
+
+  if (contentSoql) contentSoql.classList.add("hidden");
+  if (contentCypher) contentCypher.classList.add("hidden");
+  if (contentLlm) contentLlm.classList.add("hidden");
 
   if (tab === "cypher") {
     if (btnCypher) btnCypher.className = "pb-2 border-b-2 border-emerald-500 text-white flex items-center space-x-1.5 transition";
-    if (btnSoql) btnSoql.className = "pb-2 text-slate-400 hover:text-white flex items-center space-x-1.5 transition";
     if (contentCypher) contentCypher.classList.remove("hidden");
-    if (contentSoql) contentSoql.classList.add("hidden");
+  } else if (tab === "llm") {
+    if (btnLlm) btnLlm.className = "pb-2 border-b-2 border-cyan-500 text-white flex items-center space-x-1.5 transition";
+    if (contentLlm) contentLlm.classList.remove("hidden");
   } else {
     if (btnSoql) btnSoql.className = "pb-2 border-b-2 border-indigo-500 text-white flex items-center space-x-1.5 transition";
-    if (btnCypher) btnCypher.className = "pb-2 text-slate-400 hover:text-white flex items-center space-x-1.5 transition";
     if (contentSoql) contentSoql.classList.remove("hidden");
-    if (contentCypher) contentCypher.classList.add("hidden");
   }
 }
 

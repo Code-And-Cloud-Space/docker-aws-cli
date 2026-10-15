@@ -343,7 +343,8 @@ async def get_salesforce_records(
             "filter": "media_only" if media_only else (search if search else "all"),
             "soql": getattr(sf_client, "last_soql_query", None),
             "cypher": getattr(sf_client, "last_cypher_query", None),
-            "interpretation": getattr(sf_client, "last_nlp_interpretation", None)
+            "interpretation": getattr(sf_client, "last_nlp_interpretation", None),
+            "llm_telemetry": getattr(sf_client, "last_llm_telemetry", None)
         }
     except HTTPException:
         raise
@@ -376,6 +377,7 @@ async def execute_nlp_salesforce_query(
             "soql": soql,
             "cypher": cypher,
             "interpretation": parsed["interpretation"],
+            "llm_telemetry": parsed.get("llm_telemetry"),
             "totalSize": len(raw_records),
             "records": raw_records,
             "instanceUrl": instance_url

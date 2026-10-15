@@ -98,6 +98,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./src/integration-engine/app:/app/app
+      - ./src/llm_engine:/app/llm_engine
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
   # 5. Management UI Dashboard with Vercel CLI (Module: src/dashboard-ui)
